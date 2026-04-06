@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我们的故事 | Bot1 & 大哥</title>
+    <link rel="stylesheet" href="style.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js/+esm",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+                "talkinghead": "./TalkingHead/modules/talkinghead.mjs",
+                "headtts": "./HeadTTS/modules/headtts.mjs"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="scroll-progress"></div>
+    <canvas id="particles"></canvas>
+    
+    <div id="offline-indicator"></div>
+    <div class="container" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 60px;">
+        <section class="decals-section" style="width: 100%; max-width: 1200px;">
+            <div id="decals-container" style="width: 100%; height: 600px;"></div>
+        </section>
+
+        <section class="robot-section" style="width: 100%; max-width: 1200px;">
+            <div id="robot-container" style="width: 100%; height: 600px; position: relative;"></div>
+        </section>
+
+        <section class="talkinghead-section" style="width: 100%; max-width: 1200px; position: relative;">
+            <div id="talkinghead-container" style="width: 100%; height: 1000px; position: relative;"></div>
+            
+            <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
+            <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">
+                <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">
+                <button id="talkinghead-speak" style="display: none; padding: 12px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 16px; transition: all 0.3s;">说话</button>
+            </div>
+            <div id="talkinghead-loading" style="text-align: center; color: white; margin-top: 10px; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);"></div>
+        </section>
+
+        <div id="modelSettingsModal" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Character Settings</h3>
+                    <button id="closeModelModal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label>Avatar Model</label>
+                        <div class="option-grid" id="modelOptions">
+                            <div class="option-card active" data-model="brunette.glb" data-body="F">
+                                <span class="option-icon">👩</span>
+                                <span class="option-name">Brunette</span>
+                            </div>
+                            <div class="option-card" data-model="avaturn.glb" data-body="M">
+                                <span class="option-icon">👨</span>
+                                <span class="option-name">Avaturn</span>
+                            </div>
+                            <div class="option-card" data-model="avatarsdk.glb" data-body="M">
+                                <span class="option-icon">🧔</span>
+                                <span class="option-name">SDK</span>
+                            </div>
+                            <div class="option-card" data-model="mpfb.glb" data-body="F">
+                                <span class="option-icon">👵</span>
+                                <span class="option-name">MPFB</span>
+                            </div>
+                            <div class="option-card" data-model="robot_dreams.glb" data-body="M">
+                                <span class="option-icon">🤖</span>
+                                <span class="option-name">Robot</span>
+                            </div>
+                            <div class="option-card" data-model="elonmask_animations.glb" data-body="M">
+                                <span class="option-icon">🚀</span>
+                                <span class="option-name">Elon</span>
+                            </div>
+                            <div class="option-card" id="importModelBtn">
+                                <span class="option-icon">📂</span>
+                                <span class="option-name">Import</span>
+                            </div>
+                            <div class="option-card" id="createModelBtn">
+                                <span class="option-icon">✨</span>
+                                <span class="option-name">Create</span>
+                            </div>
+                            <input type="file" id="importModelInput" accept=".glb" style="display: none;">
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label>Voice</label>
+                        <div class="option-grid" id="voiceOptions">
+                            <div class="option-card active" data-voice="af_bella">
+                                <span class="option-icon">🔊</span>
+                                <span class="option-name">Bella (F)</span>
+                            </div>
+                            <div class="option-card" data-voice="af_sarah">
+                                <span class="option-icon">🔊</span>
+                                <span class="option-name">Sarah (F)</span>
+                            </div>
+                            <div class="option-card" data-voice="am_adam">
+                                <span class="option-icon">🔉</span>
+                                <span class="option-name">Adam (M)</span>
+                            </div>
+                            <div class="option-card" data-voice="am_michael">
+                                <span class="option-icon">🔉</span>
+                                <span class="option-name">Michael (M)</span>
+                            </div>
+                            <div class="option-card" id="importVoiceBtn">
+                                <span class="option-icon">📂</span>
+                                <span class="option-name">Import</span>
+                            </div>
+                            <input type="file" id="importVoiceInput" accept=".bin" style="display: none;">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="applyModelSettings" class="primary-btn">Apply Changes</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Model Modal -->
+        <div id="createModelModal" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Create Avatar</h3>
+                    <button id="closeCreateModal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="tabs">
+                        <div class="tab active" data-tab="text-to-model">Text to Model</div>
+                        <div class="tab" data-tab="image-to-model">Image to Model</div>
+                    </div>
+                    
+                    <div class="tab-content active" id="text-to-model-content">
+                        <div class="input-group">
+                            <label>Description</label>
+                            <textarea id="modelPrompt" placeholder="Describe your avatar (e.g., A futuristic cyberpunk girl with blue hair)..." rows="4"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="image-to-model-content">
+                        <div class="input-group">
+                            <label>Upload Reference Image</label>
+                            <div class="upload-area" id="imageUploadArea">
+                                <span class="upload-icon">📷</span>
+                                <span class="upload-text">Click or Drag image here</span>
+                                <input type="file" id="modelImageInput" accept="image/*" style="display: none;">
+                            </div>
+                            <div id="imagePreview" style="display: none;">
+                                <img src="" alt="Preview">
+                                <button id="removeImageBtn">&times;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="creation-status" style="display: none;">
+                        <div class="spinner"></div>
+                        <span id="creationStatusText">Generating...</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="generateModelBtn" class="primary-btn">Generate</button>
+                </div>
+            </div>
+        </div>
+
+        <button id="themeToggle" class="theme-toggle">🌓</button>
+        <button id="modelToggle" class="model-toggle">👤</button>
+        <button id="eyeTrackingToggle" class="eye-tracking-toggle">👁️</button>
+
+        <div id="hearts-container"></div>
+        <div id="cursor-follower"></div>
+
+    <div id="floating-quote"></div>
+
+    </div>
+    <script src="webgazer.js"></script>
+    <script src="eye-tracking.js?v=2"></script>
+    <script src="script.js?v=2"></script>
+    <script type="module" src="decals.js?v=3"></script>
+    <script type="module" src="robot.js?v=3"></script>
+    <script type="module" src="talkinghead.js?v=3"></script>
+</body>
+</html>
