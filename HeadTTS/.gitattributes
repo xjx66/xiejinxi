@@ -1,0 +1,7 @@
+index.html linguist-detectable=false
+.* export-ignore
+*.html export-ignore
+jest.config.mjs export-ignore
+avatars export-ignore
+voices export-ignore
+tests export-ignore

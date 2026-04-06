@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>HeadTTS - Latency</title>
+
+  <style>
+    body, html { width:100%; height:100%; max-width: 900px; margin: auto; position: relative; background-color: #202020; color: white; line-height: 28px; }
+    #container { display: flex; flex-direction: column; }
+    .controls, .subcontrols { display: flex; padding: 10px; height: 28px; line-height: 28px; gap: 10px; }
+    .subcontrols { display: none; }
+    .subcontrols input { flex: 1 }
+    .controls > span, .subcontrols > span { margin: 0; width: 120px; text-align: right; font-family: monospace; font-size: 18px; }
+    #status { width: 100px; text-align: left !important; height: 28px; font-family: monospace; font-size: 18px; color: green; }
+    .apikey { -webkit-text-security: square; }
+    #results { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+    #results div { height: 28px; font-family: monospace; font-size: 18px; }
+    #results a { color: white; text-decoration: none; margin: 0 1px 0 0; }
+    .summary { font-weight: bold; }
+    #testcase, #google-endpoint, #google-apikey { flex: 1; height: 28px; font-family: arial; font-size: 18px; }
+    #testruns { width: 50px; height: 28px; font-family: arial; font-size: 18px; }
+    #reset, #start { width: 70px; height: 28px; font-family: monospace; font-weight: bold; }
+  </style>
+
+  <script type="importmap">
+  { "imports":
+    {
+      "headtts": "../modules/headtts.mjs",
+      "utils": "../modules/utils.mjs"
+    }
+  }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
+
+  <script type="module">
+    import * as utils from "utils";
+    import { HeadTTS } from "headtts";
+    let headtts;
+
+    // TEST CASES
+    const testcases = {
+      "headtts-browser-fp32-webgpu": {
+        fn: headttsTestRun,
+        params: [ "webgpu", "fp32" ]
+      },
+      "headtts-browser-q4-wasm": {
+        fn: headttsTestRun,
+        params: [ "wasm", "q4" ]
+      },
+      "headtts-node-websocket": {
+        fn: headttsTestRun,
+        params: [ "ws://127.0.0.1:8882" ]
+      },
+      "headtts-node-rest": {
+        fn: headttsTestRun,
+        params: [ "http://127.0.0.1:8882/v1" ]
+      },
+      "google-tts": {
+        fn: googleTestRun,
+        params: [],
+        subcontrols: "google"
+      },
+      "elevenlabs-websocket": {
+        fn: elevenTestRun,
+        params: [],
+        subcontrols: "eleven"
+      },
+      "elevenlabs-rest": {
+        fn: elevenRestTestRun,
+        params: [],
+        subcontrols: "eleven"
+      },
+      "microsoft-azure-speech-sdk": {
+        fn: microsoftTestRun,
+        params: [],
+        subcontrols: "microsoft"
+      }
+    };
+
+    const textWarmup = "The birch canoe slid on the smooth planks.";
+
+    const timeoutMs = 5000;
+
+    const textList1 = [
+      "The birch canoe slid on the smooth planks.",
+      "Glue the sheet to the dark blue background.",
+      "It's easy to tell the depth of a well.",
+      "These days a chicken leg is a rare dish.",
+      "Rice is often served in round bowls.",
+      "The juice of lemons makes fine punch.",
+      "The box was thrown beside the parked truck.",
+      "The hogs were fed chopped corn and garbage.",
+      "Four hours of steady work faced us.",
+      "A large size in stockings is hard to sell."
+    ] ;
+    const textTest = textList1.join(" ");
+
+    // Elements
+    const el = {}; // DOM elements
+    const cl = {}; // DOM classes
+
+
+    // Add new test run
+    function addNewRun( id, tsStart, tsFirstByte, tsEnd, audioDurationMs, audios ) {
+
+      // Add new run
+      const c = testcases[id];
+      if ( !c.hasOwnProperty("runs") ) {
+        c.runs = [];
+      }
+      const index = c.runs.length + 1;
+      const r = {
+        index: index,
+        FIL: tsEnd - tsStart ,
+        FAB: tsFirstByte - tsStart ,
+        RTF: ( tsEnd - tsStart ) / ( audioDurationMs ),
+        audios: audios
+      };
+      r.text = r.index + ": FIL = " + Math.round(r.FIL) + "ms, FAB = " + Math.round(r.FAB) + "ms, RTF = " + r.RTF.toFixed(2);
+      c.runs.push(r);
+
+      // Calculate totals
+      let FIL = 0, FAB = 0, RTF = 0;
+      c.runs.forEach( x => {
+        FIL += x.FIL;
+        FAB += x.FAB;
+        RTF += x.RTF;
+      });
+
+      // Calculate mean values
+      const o = {
+        count: index,
+        FIL: Math.round( FIL / index ),
+        FAB: Math.round( FAB / index ),
+        RTF: (RTF / index).toFixed(2),
+      };
+      o.text = id + ": " + o.count +" runs, FIL = " + o.FIL + "ms, FAB = " + o.FAB + "ms, RTF = " + o.RTF;
+      c.summary = o;
+
+      updateResults();
+    }
+
+    window.playAudio = (id,run,part) => {
+      const c = testcases[id];
+      if ( c.hasOwnProperty("runs") && run >= 0 && run < c.runs.length ) {
+        let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let source = audioCtx.createBufferSource();
+        source.buffer = c.runs[run].audios[part];
+        source.connect(audioCtx.destination);
+        source.start();
+      }
+    }
+
+    function updateResults() {
+      const id = el.testcase.options[el.testcase.selectedIndex].value;
+      const c = testcases[id];
+
+      el.results.innerHTML = '';
+
+      let s = "";
+      if ( c.hasOwnProperty("runs") ) {
+        s += '<div class="run">Test runs:</div>';
+        c.runs.forEach( (x,i) => {
+          s += '<div class="run">' + x.text + ", audio: ";
+          x.audios.forEach( (_,j) => {
+            s += '<a href="javascript:playAudio(\'' + id + '\',' + i + ',' + j + ')">&#10074;</a>';
+          });
+          s += '</div>';
+        });
+      }
+      el.results.innerHTML = s;
+
+      if ( c.hasOwnProperty("summary") ) {
+        el.results.innerHTML += '<div class="summary">' + c.summary.text + '</div>';
+      }
+
+    }
+
+    function updateStatus(text) {
+      if ( text === 'READY' ) {
+        el.status.innerHTML = text;
+        el.start.disabled = false;
+      } else {
+        el.status.innerHTML = '<span style="color: red">' + text + '</span>';
+        el.start.disabled = true;
+      }
+    }
+
+    // HeadTTS
+    async function headttsTestRun( id, endpoint, dtype ) {
+
+      // Init
+      updateStatus("INIT");
+      const init = {
+        endpoints: [endpoint], // Servers
+        voices: ["af_bella"] // Voices to be pre-loaded
+      };
+      if ( endpoint === "webgpu" ) {
+        if ( dtype ) init.dtypeWebgpu = dtype;
+      }
+      if ( endpoint === "wasm" ) {
+        if ( dtype ) init.dtypeWasm = dtype;
+      }
+      headtts = new HeadTTS(init);
+
+      // Connect
+      updateStatus("CONNECT");
+      await headtts.connect();
+
+      // Setup voice
+      updateStatus("SETUP");
+      headtts.setup({
+        voice: "af_bella",
+        language: "en-us",
+        speed: 1,
+        audioEncoding: "wav"
+      });
+
+      // Warmup
+      updateStatus("WARMUP");
+      await new Promise( resolve => {
+        headtts.onend = () => resolve();
+        headtts.synthesize({ input: textWarmup });
+      });
+
+      // Timeout
+      updateStatus("WAIT");
+      await new Promise(r => setTimeout(r, timeoutMs));
+
+      // Run test
+      let tsStart, tsFirstByte, tsEnd, audioDurationSec = 0, audios = [];
+      await new Promise((resolve, reject) => {
+
+        headtts.onstart = () => {
+          updateStatus("START");
+          tsStart = performance.now();
+        }
+
+        headtts.onmessage = (message) => {
+          if ( message.type === 'audio' ) {
+            updateStatus("AUDIO#" + message.ref);
+            if ( !tsFirstByte ) {
+              tsFirstByte = performance.now();
+            }
+            audios.push(message.data.audio);
+            audioDurationSec += message.data.audio.duration;
+          }
+        }
+
+        headtts.onend = () => {
+          tsEnd = performance.now();
+          updateStatus("READY");
+          resolve();
+        }
+
+        headtts.synthesize({ input: textTest });
+
+      });
+
+      // Add the results
+      addNewRun( id, tsStart, tsFirstByte, tsEnd, 1000 * audioDurationSec, audios );
+
+    }
+
+
+    // Google Cloud TTS
+    async function googleSpeak(text) {
+
+      // Use SSML, because we want timestamps
+      const ssml = "<speak>";
+      text.split(" ").forEach( (x,i) => {
+        if (i > 0) {
+          ssml += " <mark name='" + i + "'/>";
+        }
+        ssml += x.replaceAll('&','&amp;')
+          .replaceAll('<','&lt;')
+          .replaceAll('>','&gt;')
+          .replaceAll('"','&quot;')
+          .replaceAll('\'','&apos;');
+      });
+      ssml += "</speak>";
+
+      // Body
+      const body = {
+        "input": {
+          "ssml": ssml
+        },
+        "voice": {
+          "languageCode": "en-US",
+          "name": "en-US-Neural2-C"
+        },
+        "audioConfig": {
+          "audioEncoding": "LINEAR16",
+          "speakingRate": 1,
+          "pitch": 0,
+          "volumeGainDb": 0
+        },
+        "enableTimePointing": [ 1 ] // Timepoint information for mark tags
+      };
+
+      // Request
+      let request = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        body: JSON.stringify(body)
+      };
+
+      const response = await fetch( el["google-endpoint"].value + "?key=" + el["google-apikey"].value, request);
+
+      const data = await response.json();
+
+      return data;
+    }
+
+    async function googleTestRun( id ) {
+
+      // Init N/A
+      let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Connect N/A
+
+      // Setup voice N/A
+
+      // Warmup
+      await googleSpeak(textWarmup);
+
+      // Timeout
+      updateStatus("WAIT");
+      await new Promise(r => setTimeout(r, timeoutMs));
+
+      // Run test
+      let tsStart, tsFirstByte, tsEnd, audioDurationSec = 0, audios = [];
+      updateStatus("START");
+      tsStart = performance.now();
+      for( let i=0; i<textList1.length; i++ ) {
+
+        const data = await googleSpeak(textList1[i]);
+
+        const buf = utils.b64ToArrayBuffer(data.audioContent);
+        const audio = await audioCtx.decodeAudioData( buf );
+        audios.push(audio);
+
+        if ( i === 0 ) tsFirstByte = performance.now();
+        audioDurationSec += audio.duration;
+      }
+      tsEnd = performance.now();
+      updateStatus("READY");
+
+      // Add the results
+      addNewRun( id, tsStart, tsFirstByte, tsEnd, 1000 * audioDurationSec, audios );
+
+    }
+
+
+    // ElevenLabs
+    let elevenSocket = null;
+    let elevenInputMsgs = null;
+    let elevenOutputMsg = null;
+    let elevenOnProcessed = null;
+
+    async function elevenSpeak(text, ondata, onclose) {
+
+      if ( !elevenSocket ) {
+
+        // Temporary reservation of WebSocket connection
+        elevenSocket = { readyState: 0 };
+
+        // Temporary stack of message until the connection is established
+        elevenInputMsgs = [
+          {
+            "text": " ",
+            "voice_settings": { "stability": 0.8, "similarity_boost": true },
+            "generation_config": {
+              "chunk_length_schedule": [500,500,500,500]
+            },
+            "xi_api_key": el["eleven-apikey"].value
+          },
+          {
+            "text": text,
+            "try_trigger_generation": false,
+            "flush": true
+          }
+        ];
+
+        // Make the connection
+        const url = "wss://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL/stream-input?model_id=eleven_turbo_v2_5&output_format=pcm_22050";
+        elevenSocket = new WebSocket(url);
+
+        // Connection opened
+        elevenSocket.onopen = function (event) {
+          elevenOutputMsg = null;
+          while (elevenInputMsgs.length > 0) {
+            elevenSocket.send(JSON.stringify(elevenInputMsgs.shift()));
+          }
+        }
+
+        // New message received
+        elevenSocket.onmessage = function (event) {
+          const r = JSON.parse(event.data);
+
+          // Speak audio
+          if ( (r.isFinal || r.normalizedAlignment) && elevenOutputMsg ) {
+            if ( ondata ) {
+              ondata(elevenOutputMsg);
+            }
+            elevenOutputMsg = null;
+          }
+
+          if ( !r.isFinal ) {
+            // New part
+            if ( r.alignment ) {
+              elevenOutputMsg = { audio: [], words: [], wtimes: [], wdurations: [] };
+
+              // Parse chars to words
+              let word = '';
+              let time = 0;
+              let duration = 0;
+              for( let i=0; i<r.alignment.chars.length; i++ ) {
+                if ( word.length === 0 ) time = r.alignment.charStartTimesMs[i];
+                if ( word.length && r.alignment.chars[i] === ' ' ) {
+                  elevenOutputMsg.words.push( word );
+                  elevenOutputMsg.wtimes.push(time);
+                  elevenOutputMsg.wdurations.push(duration);
+                  word = '';
+                  duration = 0;
+                } else {
+                  duration += r.alignment.charDurationsMs[i];
+                  word += r.alignment.chars[i];
+                }
+              }
+              if ( word.length ) {
+                elevenOutputMsg.words.push(word);
+                elevenOutputMsg.wtimes.push(time);
+                elevenOutputMsg.wdurations.push(duration);
+              }
+            }
+
+            // Add audio content to message
+            if ( r.audio &&  elevenOutputMsg ) {
+              elevenOutputMsg.audio.push( utils.b64ToArrayBuffer( r.audio ) );
+            }
+          }
+        };
+
+        // Error
+        elevenSocket.onerror = function (error) {
+          if ( onerror ) onerror();
+          console.error(`WebSocket Error: ${error}`);
+        };
+
+        // Connection closed
+        elevenSocket.onclose = function (event) {
+          if ( event.wasClean) {
+            // console.info(`Connection closed cleanly, code=${event.code}, reason=${event.reason}`);
+          } else {
+            console.warn('Connection died');
+          }
+          if ( onclose ) onclose();
+          elevenSocket = null;
+        };
+      } else {
+        let msg = {
+          "text": text
+        };
+        if ( text.length ) {
+          msg["try_trigger_generation"] = false;
+          msg["flush"] = true;
+        }
+        if (elevenSocket.readyState === 1) { // OPEN
+          elevenSocket.send(JSON.stringify(msg))
+        } else if ( elevenSocket.readyState === 0 ) { // CONNECTING
+          elevenInputMsgs.push(msg);
+        }
+      }
+    }
+
+
+    async function elevenTestRun( id ) {
+
+      // Init N/A
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Connect N/A
+
+      // Setup voice N/A
+
+      // Warmup N/A
+
+      // Timeout N/A
+      // updateStatus("WAIT");
+      // await new Promise(r => setTimeout(r, timeoutMs));
+
+      // Run test
+      let resolveClosed;
+      const closed = new Promise((r) => resolveClosed = r );
+      let tsStart, tsFirstByte, tsEnd, audioDurationSec = 0, audios = [];
+      updateStatus("START");
+      tsStart = performance.now();
+      for( let i=0; i<textList1.length; i++ ) {
+        const text = textList1[i] + " ";
+        elevenSpeak( text, (data) => {
+          if ( !tsFirstByte ) tsFirstByte = performance.now();
+          const arr = utils.concatArrayBuffers( data.audio );
+          const audio = utils.pcmToAudioBuffer( arr, 22050, audioCtx );
+          audios.push(audio);
+          audioDurationSec += audio.duration;
+        }, resolveClosed);
+      }
+      if ( elevenSocket ) {
+        elevenSpeak("");
+      }
+      await closed;
+      tsEnd = performance.now();
+      updateStatus("READY");
+
+      // Add the results
+      addNewRun( id, tsStart, tsFirstByte, tsEnd, 1000 * audioDurationSec, audios );
+
+    }
+
+
+    // ElevenLabs REST
+    // Google Cloud TTS
+    async function elevenRestSpeak(text) {
+
+      const url = "https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL/with-timestamps?output_format=pcm_24000";
+      let request = {
+        method: "POST",
+        headers: {
+          "xi-api-key": el["eleven-apikey"].value,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_flash_v2_5"
+        })
+      };
+      const response = await fetch( url, request );
+      const data = await response.json();
+      return data;
+    }
+
+    async function elevenRestTestRun( id ) {
+
+      // Init N/A
+      let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Connect N/A
+
+      // Setup voice N/A
+
+      // Warmup
+      updateStatus("WARMUP");
+      await elevenRestSpeak(textWarmup);
+
+      // Timeout
+      updateStatus("WAIT");
+      await new Promise(r => setTimeout(r, timeoutMs));
+
+      // Run test
+      let tsStart, tsFirstByte, tsEnd, audioDurationSec = 0, audios = [];
+      updateStatus("START");
+      tsStart = performance.now();
+      for( let i=0; i<textList1.length; i++ ) {
+
+        const data = await elevenRestSpeak(textList1[i]);
+
+        const arr = utils.b64ToArrayBuffer(data.audio_base64);
+        const audio = utils.pcmToAudioBuffer( arr, 24000, audioCtx );
+        audios.push(audio);
+
+        if ( i === 0 ) tsFirstByte = performance.now();
+        audioDurationSec += audio.duration;
+      }
+      tsEnd = performance.now();
+      updateStatus("READY");
+
+      // Add the results
+      addNewRun( id, tsStart, tsFirstByte, tsEnd, 1000 * audioDurationSec, audios );
+
+    }
+
+
+
+    // Speak using Microsoft
+    let microsoftSynthesizer = null;
+    const microsoftQueue= [];
+
+    async function microsoftSpeak(text, onprocessed=null) {
+
+      if ( text === null ) {
+        microsoftQueue.push( null );
+      } else {
+
+        // SSML
+        const ssml = "<speak version='1.0' " +
+          "xmlns:mstts='http://www.w3.org/2001/mstts' " +
+          "xml:lang='en-US'>" +
+          "<voice name='en-US-JennyNeural'>" +
+          "<mstts:viseme type='redlips_front'/>" +
+          text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') +
+          "</voice>" +
+          "</speak>";
+
+        microsoftQueue.push( {
+          ssml: ssml,
+          onprocessed: onprocessed,
+          speak: {
+            audio: [], words: [], wtimes: [], wdurations: [],
+            visemes: [], vtimes: [], vdurations: [], markers: [], mtimes: []
+          }
+         } );
+      }
+
+      // If this was the first item, start the process
+      if ( microsoftQueue.length === 1 ) {
+        microsoftProcessQueue();
+      }
+    }
+
+    async function microsoftProcessQueue() {
+
+      if ( microsoftQueue.length ) {
+
+        const job = microsoftQueue[0];
+
+        if ( job === null ) {
+          microsoftQueue.shift();
+          if ( microsoftQueue.length === 0 && microsoftSynthesizer ) {
+            microsoftSynthesizer.close();
+            microsoftSynthesizer = null;
+          }
+        } else {
+
+          // If we do not have a speech synthesizer, create a new
+          if ( !microsoftSynthesizer ) {
+
+            // Create a new speech synthesizer
+            const endpoint = el["microsoft-endpoint"].value;
+            const apikey = el["microsoft-apikey"].value;
+            const config = window.SpeechSDK.SpeechConfig.fromEndpoint(endpoint, apikey);
+            config.setProperty("SpeechServiceConnection_Endpoint",endpoint);
+            config.speechSynthesisOutputFormat = window.SpeechSDK.SpeechSynthesisOutputFormat.Raw22050Hz16BitMonoPcm;
+            config.setProperty(window.SpeechSDK.PropertyId.SpeechServiceResponse_RequestSentenceBoundary, "true");
+            microsoftSynthesizer = new window.SpeechSDK.SpeechSynthesizer(config,null);
+
+            // Viseme conversion from Microsoft to Oculus
+            // TODO: Check this conversion again!
+            const visemeMap = [
+              "sil", 'aa', 'aa', 'O', 'E', // 0 - 4
+              'E', 'I', 'U', 'O', 'O', // 5 - 9
+              'O', 'I', 'kk', 'RR', 'nn', // 10 - 14
+              'SS', 'CH', 'TH', 'FF', 'DD', // 15 - 19
+              'kk', 'PP' // 20 - 21
+            ];
+
+            // Process visemes
+            microsoftSynthesizer.visemeReceived = function(s, e) {
+              if ( microsoftQueue[0] && microsoftQueue[0].speak ) {
+                const o = microsoftQueue[0].speak;
+                const viseme = visemeMap[e.visemeId];
+                const time = e.audioOffset / 10000;
+
+                // Calculate the duration of the previous viseme
+                if ( o.vdurations.length ) {
+
+                  if ( o.visemes[ o.visemes.length-1 ] === 0 ) {
+                    o.visemes.pop();
+                    o.vtimes.pop();
+                    o.vdurations.pop();
+                  } else {
+                    // Remove silence
+                    o.vdurations[ o.vdurations.length-1 ] = time - o.vtimes[ o.vdurations.length-1 ];
+                  }
+                }
+
+
+
+                // Add this viseme
+                o.visemes.push( viseme );
+                o.vtimes.push( time );
+                o.vdurations.push( 75 ); // Duration will be fixed when the next viseme is received
+              }
+            };
+
+            // Process word boundaries and punctuations
+            microsoftSynthesizer.wordBoundary = function (s, e) {
+              if ( microsoftQueue[0] && microsoftQueue[0].speak ) {
+                const o = microsoftQueue[0].speak;
+                const word = e.text;
+                const time = e.audioOffset / 10000;
+                const duration = e.duration / 10000;
+
+                if ( e.boundaryType === "PunctuationBoundary" && o.words.length ) {
+                  o.words[ o.words.length-1 ] += word;
+                } else if ( e.boundaryType === "WordBoundary" || e.boundaryType === "PunctuationBoundary" ) {
+                  o.words.push( word );
+                  o.wtimes.push( time );
+                  o.wdurations.push( duration );
+                } else if ( e.boundaryType === "SentenceBoundary" ) {
+                  if ( time > 500 ) {
+                    o.markers.push( () => { head.lookAtCamera(500); });
+                    o.mtimes.push( time - 500 );
+                  }
+                }
+              }
+            };
+
+          }
+
+          // Speak the SSML
+          microsoftSynthesizer.speakSsmlAsync(job.ssml,
+            function (result) {
+              if ( microsoftQueue[0] && microsoftQueue[0].speak ) {
+                if (result.reason === window.SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                  const job = microsoftQueue[0];
+                  job.speak.audio.push( result.audioData );
+                  if ( job.onprocessed ) job.onprocessed( job.speak );
+                }
+                microsoftQueue.shift();
+                microsoftProcessQueue();
+              }
+            }, function (err) {
+              if ( job.onprocessed ) job.onprocessed(null);
+              console.log(err);
+              microsoftQueue.shift();
+              microsoftProcessQueue();
+            }
+          );
+
+        }
+      }
+    }
+
+    async function microsoftTestRun( id ) {
+
+      // Init N/A
+      let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Connect N/A
+
+      // Setup voice N/A
+
+      // Warmup
+      updateStatus("WARMUP");
+      await new Promise( resolve => microsoftSpeak(textWarmup,resolve) );
+
+      // Timeout
+      updateStatus("WAIT");
+      await new Promise(r => setTimeout(r, timeoutMs));
+
+      // Run test
+      let promises = [];
+      let tsStart, tsFirstByte, tsEnd, audioDurationSec = 0, audios = [];
+      updateStatus("START");
+      tsStart = performance.now();
+      for( let i=0; i<textList1.length; i++ ) {
+
+        promises.push( new Promise(resolve => {
+          microsoftSpeak( textList1[i], (data) => {
+            if ( data ) {
+              console.log(data);
+              if ( !tsFirstByte ) tsFirstByte = performance.now();
+              const audio = utils.pcmToAudioBuffer( data.audio[0], 24000, audioCtx );
+              audios.push(audio);
+              audioDurationSec += audio.duration;
+              resolve();
+            }
+          });
+        }));
+      }
+      await Promise.all(promises);
+      tsEnd = performance.now();
+      updateStatus("READY");
+
+      // Add the results
+      addNewRun( id, tsStart, tsFirstByte, tsEnd, 1000 * audioDurationSec, audios );
+
+    }
+
+
+
+    // WEB PAGE LOADED
+    document.addEventListener('DOMContentLoaded', async function(e) {
+
+      // Get all DOM elements with an ID or class
+      document.querySelectorAll('[id]').forEach( x => el[x.id] = x );
+      document.querySelectorAll('[class]').forEach( x => {
+        x.className.toString().split(/\s+/).forEach( y => {
+          if ( !cl.hasOwnProperty(y) ) cl[y] = [];
+          cl[y].push(x);
+        })
+      });
+
+      // Populate test cases
+      Object.keys(testcases).forEach( (id,i) => {
+        el.testcase.add( new Option(id, id, i===0, i===0) );
+      });
+
+      // Change test case
+      el.testcase.addEventListener("change", (event) => {
+        const id = el.testcase.options[el.testcase.selectedIndex].value;
+        const c = testcases[id];
+        cl.subcontrols.forEach( x => x.style.display = 'none' );
+        if ( c.subcontrols ) {
+          cl[c.subcontrols].forEach( x => x.style.display = 'flex' );
+        }
+        updateResults();
+      });
+
+      // Reset
+      el.reset.addEventListener('click', async () => {
+        const id = el.testcase.options[el.testcase.selectedIndex].value;
+        const c = testcases[id];
+        if ( c.hasOwnProperty("summary") ) delete c.summary;
+        if ( c.hasOwnProperty("runs") ) delete c.runs;
+        updateStatus("READY");
+        updateResults();
+      });
+
+      // Run
+      el.start.addEventListener('click', async () => {
+        const id = el.testcase.options[el.testcase.selectedIndex].value;
+        const testcase = testcases[id];
+        const nodeTestruns = document.getElementById('testruns');
+        const runs = parseInt(el.testruns.options[el.testruns.selectedIndex].value);
+
+        for( let i=0; i<runs; i++ ) {
+          try {
+            await testcase.fn( id, ...testcase.params );
+          } catch(error) {
+            console.log(error);
+          }
+        }
+      });
+
+    });
+
+  </script>
+</head>
+
+<body>
+  <div id="container">
+    <div class="controls">
+      <span>TESTCASE:</span>
+      <select id="testcase" name="choice">
+      </select>
+      <input id="reset" type="button" value="RESET">
+      <span>RUN:</span>
+      <select id="testruns" name="choice">
+        <option value="1" selected>1</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+      <input id="start" type="button" value="START">
+      <span id="status">READY</span>
+    </div>
+    <div class="google subcontrols">
+      <span>ENDPOINT:</span>
+      <input id="google-endpoint" type="text" value="https://eu-texttospeech.googleapis.com/v1beta1/text:synthesize">
+      <span>APIKEY:</span>
+      <input id="google-apikey" class="apikey" type="text">
+    </div>
+    <div class="eleven subcontrols">
+      <span>APIKEY:</span>
+      <input id="eleven-apikey" class="apikey" type="text">
+    </div>
+    <div class="microsoft subcontrols">
+      <span>ENDPOINT:</span>
+      <input id="microsoft-endpoint" type="text" value="wss://northeurope.tts.speech.microsoft.com/cognitiveservices/websocket/v1">
+      <span>APIKEY:</span>
+      <input id="microsoft-apikey" class="apikey" type="text">
+    </div>
+    <div id="results">
+    </div>
+  </div>
+</body>
+
+</html>

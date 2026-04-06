@@ -1,0 +1,44 @@
+{
+  "name": "@met4citizen/headtts",
+  "version": "1.2.0",
+  "description": "HeadTTS: A free Javascript text-to-speech with timestamps and visemes.",
+  "main": "modules/headtts.mjs",
+  "type": "module",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "headttsd.json",
+    "modules/",
+    "dictionaries/"
+  ],
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "ws": "^8.18.3"
+  },
+  "scripts": {
+    "start": "node ./modules/headtts-node.mjs",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "postinstall": "mkdir -p -m 777 ./node_modules/@huggingface/transformers/.cache"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/met4citizen/HeadTTS.git"
+  },
+  "keywords": [
+    "talkinghead",
+    "lip-sync",
+    "text-to-speech",
+    "timestamps",
+    "visemes",
+    "kokoro"
+  ],
+  "author": "Mika Suominen",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/met4citizen/HeadTTS/issues"
+  },
+  "homepage": "https://github.com/met4citizen/HeadTTS#readme",
+  "devDependencies": {
+    "jest": "^30.2.0"
+  }
+}
