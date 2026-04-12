@@ -256,28 +256,293 @@ Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Ple
 }
 
 document.addEventListener('DOMContentLoaded', async function(e) {
-    const nodeAvatar = document.getElementById('talkinghead-container');
+    const turntable = document.getElementById('carousel-turntable');
     const nodeLoading = document.getElementById('talkinghead-loading');
     const nodeSpeak = document.getElementById('talkinghead-speak');
     const nodeText = document.getElementById('talkinghead-text');
 
-    if (!nodeAvatar) return;
+    if (!turntable) return;
 
     try {
-        nodeLoading.textContent = "Loading...";
+        nodeLoading.textContent = "Loading Avatars...";
 
-        head = new TalkingHead(nodeAvatar, {
-            ttsEndpoint: "https://api.elevenlabs.io/v1/text-to-speech/", 
-            lipsyncModules: ["en"], // 关键：开启口型同步模块
-            cameraView: "full",
-            cameraY: 0.2, // 提高相机位置，让人物看起来向上移动
-            cameraDistance: 1.5, // 再次拉近镜头，配合大容器 // 大幅拉远镜头，扩大显示范围 // 稍微拉远一点
-            lightAmbientIntensity: 3,
-            lightDirectIntensity: 5,
-            cameraRotateEnable: true,
-            cameraZoomEnable: true,
-            mixerGainSpeech: 3
-        });
+        const models = [
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true },
+            { url: 'elonmask_animations.glb', body: null, mood: 'robot', preserve: true },
+            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false },
+            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false },
+            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false }
+        ];
+
+        let heads = [];
+        let activeIndex = 0;
+        const itemSpacing = 80; // 平面平铺的水平间距
+
+        const updateCarousel = () => {
+            const items = turntable.querySelectorAll('.carousel-item');
+            items.forEach((item, j) => {
+                const offset = j - activeIndex;
+                const tx = offset * itemSpacing;
+                const scale = offset === 0 ? 1 : 0.75; // 未选中的缩小一点
+                const zIndex = offset === 0 ? 10 : 5 - Math.abs(offset);
+                
+                item.style.transform = `translateX(${tx}px) scale(${scale})`;
+                item.style.zIndex = zIndex;
+                
+                if (offset === 0) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        };
+
+        // 创建各个头像容器
+        for (let i = 0; i < models.length; i++) {
+            const m = models[i];
+            const item = document.createElement('div');
+            item.className = 'carousel-item';
+            item.dataset.index = i;
+            turntable.appendChild(item);
+
+            const h = new TalkingHead(item, {
+                ttsEndpoint: "https://api.elevenlabs.io/v1/text-to-speech/", 
+                lipsyncModules: ["en"],
+                cameraView: "full",
+                cameraY: 0.2,
+                cameraDistance: 1.5,
+                lightAmbientIntensity: 3,
+                lightDirectIntensity: 5,
+                cameraRotateEnable: true,
+                cameraZoomEnable: true,
+                mixerGainSpeech: 3
+            });
+            heads.push(h);
+
+            // -----------------------------------------------------------------------
+            // Custom Animations per instance
+            // -----------------------------------------------------------------------
+            h.animEmojis['kiss'] = {
+                dt: [1000, 1000, 500], 
+                vs: {
+                    mouthPucker: [0, 1, 0], mouthFunnel: [0, 0.5, 0], eyesClosed: [0, 1, 0], headRotateX: [0, 0.1, 0],
+                    handRight: [
+                        { x: -0.2, y: 0.1, z: 0.25 }, { x: 0.2, y: 0.2, z: 0.5 }, null
+                    ]
+                }
+            };
+
+            h.gestureTemplates['kneel'] = {
+                 'LeftUpLeg.rotation': { x: 0, y: 0, z: 0 }, 'RightUpLeg.rotation': { x: 0.1, y: 0, z: 0 },
+                 'LeftLeg.rotation': { x: 1.6, y: 0, z: 0 }, 'RightLeg.rotation': { x: 1.6, y: 0, z: 0 },
+                 'LeftFoot.rotation': { x: 0.5, y: 0, z: 0 }, 'RightFoot.rotation': { x: 0.5, y: 0, z: 0 },
+                 'Hips.position': { x: 0, y: 0.55, z: 0 },
+                 'Spine.rotation': { x: 0.2, y: 0, z: 0 }, 'Head.rotation': { x: 0.3, y: 0, z: 0 }, 
+                 'LeftArm.rotation': { x: 0, y: 0, z: -0.2 }, 'RightArm.rotation': { x: 0, y: 0, z: 0.2 },
+                 'LeftForeArm.rotation': { x: -0.5, y: 0, z: 0 }, 'RightForeArm.rotation': { x: -0.5, y: 0, z: 0 }
+            };
+
+            h.poseTemplates['kneel'] = {
+                standing: true, sitting: false, kneeling: false, lying: false,
+                props: {
+                    'Hips.position': { x: 0, y: 0.45, z: 0 },
+                    'LeftUpLeg.rotation': { x: 0, y: 0.1, z: 0 }, 'RightUpLeg.rotation': { x: 0, y: -0.1, z: 0 },
+                    'LeftLeg.rotation': { x: 1.8, y: 0, z: 0 }, 'RightLeg.rotation': { x: 1.8, y: 0, z: 0 },
+                    'LeftFoot.rotation': { x: 0.8, y: 0, z: 0 }, 'RightFoot.rotation': { x: 0.8, y: 0, z: 0 },
+                    'Spine.rotation': { x: 0.3, y: 0, z: 0 }, 'Head.rotation': { x: 0.4, y: 0, z: 0 },  
+                    'LeftArm.rotation': { x: -0.2, y: 0, z: -0.2 }, 'RightArm.rotation': { x: -0.2, y: 0, z: 0.2 },
+                    'LeftForeArm.rotation': { x: -0.5, y: 0, z: 0 }, 'RightForeArm.rotation': { x: -0.5, y: 0, z: 0 }
+                }
+            };
+
+            // 每帧更新逻辑
+            h.opt.update = (dt) => {
+                if (h !== head) return; // 只有当前激活的虚拟人才处理全局动画状态
+
+                if (h.avatar && h.avatar.root && window.robotState.yOffset !== undefined) {
+                    h.avatar.root.position.y = window.robotState.yOffset;
+                    h.avatar.root.updateMatrixWorld(true);
+                }
+
+                if (h.avatar && h.avatar.preserveModelPose && h.armature) {
+                    if (robotState.isDancing && h.animations && h.animations.length > 0) {
+                        if (h.mixer && !robotState.danceAction) {
+                            const clip = h.animations[0];
+                            const action = h.mixer.clipAction(clip, h.armature);
+                            action.play();
+                            action.setEffectiveWeight(1);
+                            robotState.danceAction = action;
+                        }
+                        return; 
+                    } else if (!robotState.isDancing && robotState.danceAction) {
+                        robotState.danceAction.stop();
+                        robotState.danceAction = null;
+                    }
+
+                    if (!robotState.isDancing && !robotState.isRaisingHands && !robotState.isWaving) {
+                        if (h.animations && h.animations.length > 1) {
+                            if (h.mixer && !robotState.idleAction) {
+                                const idleClip = h.animations[1];
+                                const idleAction = h.mixer.clipAction(idleClip, h.armature);
+                                idleAction.play();
+                                idleAction.setEffectiveWeight(1);
+                                robotState.idleAction = idleAction;
+                            }
+                        }
+                    } else {
+                        if (robotState.idleAction) {
+                            robotState.idleAction.stop();
+                            robotState.idleAction = null;
+                        }
+                    }
+
+                    if (robotState.isWaving) {
+                        const rightArm = h.armature.getObjectByName('RightArm');
+                        const rightForeArm = h.armature.getObjectByName('RightForeArm');
+                        if (rightArm && rightForeArm) {
+                            if (!rightArm.userData.initialQuaternion) {
+                                rightArm.userData.initialQuaternion = rightArm.quaternion.clone();
+                                rightForeArm.userData.initialQuaternion = rightForeArm.quaternion.clone();
+                            }
+                            const t = Date.now() / 1000;
+                            const waveAngle = Math.sin(t * 10) * 0.5; 
+                            const qLift = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -2.5);
+                            const qWave = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), waveAngle);
+                            const qTarget = rightArm.userData.initialQuaternion.clone().multiply(qLift).multiply(qWave);
+                            rightArm.quaternion.slerp(qTarget, 0.2);
+                        }
+                    }
+
+                    if (robotState.isRaisingHands) {
+                        const rightArm = h.armature.getObjectByName('RightArm');
+                        const rightForeArm = h.armature.getObjectByName('RightForeArm');
+                        const leftArm = h.armature.getObjectByName('LeftArm');
+                        const leftForeArm = h.armature.getObjectByName('LeftForeArm');
+                        
+                        if (rightArm && leftArm) {
+                            if (!rightArm.userData.initialQuaternion) rightArm.userData.initialQuaternion = rightArm.quaternion.clone();
+                            if (!rightForeArm.userData.initialQuaternion) rightForeArm.userData.initialQuaternion = rightForeArm.quaternion.clone();
+                            if (!leftArm.userData.initialQuaternion) leftArm.userData.initialQuaternion = leftArm.quaternion.clone();
+                            if (!leftForeArm.userData.initialQuaternion) leftForeArm.userData.initialQuaternion = leftForeArm.quaternion.clone();
+
+                            const liftAngle = -2.5; 
+                            const qLiftRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), liftAngle);
+                            const qTargetRight = rightArm.userData.initialQuaternion.clone().multiply(qLiftRight);
+                            rightArm.quaternion.slerp(qTargetRight, 0.2); 
+
+                            const qLiftLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), liftAngle);
+                            const qTargetLeft = leftArm.userData.initialQuaternion.clone().multiply(qLiftLeft);
+                            leftArm.quaternion.slerp(qTargetLeft, 0.2);
+
+                            const bendAngle = 0.5; 
+                            const qBendRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bendAngle); 
+                            const qTargetForeRight = rightForeArm.userData.initialQuaternion.clone().multiply(qBendRight);
+                            rightForeArm.quaternion.slerp(qTargetForeRight, 0.2); 
+
+                            const qBendLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -bendAngle);
+                            const qTargetForeLeft = leftForeArm.userData.initialQuaternion.clone().multiply(qBendLeft);
+                            leftForeArm.quaternion.slerp(qTargetForeLeft, 0.2); 
+                        }
+                    } else if (!robotState.isWaving) {
+                        const rightArm = h.armature.getObjectByName('RightArm');
+                        const rightForeArm = h.armature.getObjectByName('RightForeArm');
+                        if (rightArm && rightArm.userData.initialQuaternion) rightArm.quaternion.slerp(rightArm.userData.initialQuaternion, 0.1);
+                        if (rightForeArm && rightForeArm.userData.initialQuaternion) rightForeArm.quaternion.slerp(rightForeArm.userData.initialQuaternion, 0.1);
+
+                        const leftArm = h.armature.getObjectByName('LeftArm');
+                        const leftForeArm = h.armature.getObjectByName('LeftForeArm');
+                        if (leftArm && leftArm.userData.initialQuaternion) leftArm.quaternion.slerp(leftArm.userData.initialQuaternion, 0.1);
+                        if (leftForeArm && leftForeArm.userData.initialQuaternion) leftForeArm.quaternion.slerp(leftForeArm.userData.initialQuaternion, 0.1);
+                    }
+                }
+                
+                if (isKneeling) {
+                    if (!h.armature) return;
+                    const hips = h.armature.getObjectByName('Hips');
+                    const leftLeg = h.armature.getObjectByName('LeftLeg');
+                    const rightLeg = h.armature.getObjectByName('RightLeg');
+                    const leftUpLeg = h.armature.getObjectByName('LeftUpLeg');
+                    const rightUpLeg = h.armature.getObjectByName('RightUpLeg');
+
+                    if (hips) {
+                        hips.position.y = hips.position.y * 0.9 + 0.55 * 0.1; 
+                        if (leftLeg) leftLeg.rotation.x = -2.0;
+                        if (rightLeg) rightLeg.rotation.x = -2.0;
+                        if (leftUpLeg) leftUpLeg.rotation.x = 0;
+                        if (rightUpLeg) rightUpLeg.rotation.x = 0;
+                    }
+                }
+            };
+
+            // 加载 Avatar
+            let modelUrl = './avatars/' + m.url;
+            h.showAvatar({
+                url: modelUrl,
+                body: m.body,
+                avatarMood: m.mood,
+                lipsyncLang: 'en',
+                preserveModelPose: m.preserve
+            }, (ev) => {
+                if (ev.lengthComputable && i === 0) { // 仅针对第一个模型显示加载进度
+                    let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
+                    nodeLoading.textContent = "Loading Avatar " + val + "%";
+                }
+            }).then(() => {
+                // Robot 特殊设置
+                if (m.preserve) {
+                    h.opt.avatarIdleHeadMove = false;
+                    h.opt.avatarSpeakingHeadMove = false;
+                    h.opt.avatarIgnoreCamera = true;
+                    h.opt.disableBalance = true;
+                    h.opt.freeze = false;
+
+                    if (m.url.includes('robot_dreams.glb') && i === activeIndex) {
+                        robotState.isWaving = true;
+                        setTimeout(() => robotState.isWaving = false, 3000);
+                    }
+                    
+                    if (m.url.includes('elonmask_animations.glb')) {
+                        if (h.camera && h.cameraTarget) {
+                            if (h.avatar && h.avatar.root) {
+                                h.avatar.root.scale.set(0.35, 0.35, 0.35); 
+                            }
+                            h.camera.position.y = 0.5; 
+                            h.camera.position.z = 1.5; 
+                            h.cameraTarget.y = 0.3; 
+                            h.camera.fov = 45; 
+                            h.camera.updateProjectionMatrix();
+                        }
+                    }
+                }
+            });
+
+            // 点击转盘项目
+            item.addEventListener('click', () => {
+                if (activeIndex === i) return; // 已经是当前项
+
+                // 切换全局引用
+                activeIndex = i;
+                updateCarousel(); // 更新所有模型的平面位置和缩放
+
+                head = heads[activeIndex];
+                window.robotState.currentModelUrl = m.url;
+                
+                // 如果是特殊模型，且刚才没挥手，可以再触发一下挥手
+                if (m.preserve && m.url.includes('robot_dreams.glb')) {
+                    robotState.isWaving = true;
+                    setTimeout(() => robotState.isWaving = false, 3000);
+                }
+            });
+        } // end for
+
+        updateCarousel(); // 初始化时排布好所有模型
+
+        // 设置默认全局 head
+        head = heads[0];
+        window.robotState.currentModelUrl = models[0].url;
+
+        // --- 剩下的原本 DOMContentLoaded 逻辑 ---
 
         if (nodeSpeak && nodeText) {
             // 输入框动态宽度调整
@@ -360,616 +625,6 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
             });
         }
-
-        // -----------------------------------------------------------------------
-        // 自定义动作 (Custom Gestures/Emojis)
-        // -----------------------------------------------------------------------
-        // 1. 定义 [kiss] 动作
-        // 使用内置的 handRight IK 动画轨道，这比手动调用 ikSolve 更安全
-        head.animEmojis['kiss'] = {
-            dt: [1000, 1000, 500], 
-            vs: {
-                // 面部表情
-                mouthPucker: [0, 1, 0],      
-                mouthFunnel: [0, 0.5, 0],    
-                eyesClosed: [0, 1, 0],       
-                headRotateX: [0, 0.1, 0],
-                
-                // IK 手部控制 (相对于 RightShoulder 的坐标)
-                // 坐标单位：米
-                // x: 左右 (负左正右)
-                // y: 上下 (负下正上)
-                // z: 前后 (负后正前)
-                handRight: [
-                    { x: -0.2, y: 0.1, z: 0.25 }, // 阶段1: 移到嘴边 (左移, 微上, 前伸)
-                    { x: 0.2, y: 0.2, z: 0.5 },   // 阶段2: 挥出飞吻 (右移, 上抬, 远伸)
-                    null                          // 阶段3: 放下 (null 会让 IK 停止，手回到自然下垂)
-                ]
-            }
-        };
-
-        // 确保清除旧的 gestureTemplates
-        if(head.gestureTemplates['kiss']) delete head.gestureTemplates['kiss'];
-
-        // 2. 定义 [kneel] 跪下姿势 (修正版)
-        // 关键：同时在 gestureTemplates 中定义，这样 playGesture 也能调用
-        // 这对于 TalkingHead 来说是一种双重保险
-        head.gestureTemplates['kneel'] = {
-             // 腿部动作：膝盖弯曲，大腿后折
-             'LeftUpLeg.rotation': { x: 0, y: 0, z: 0 }, 
-             'RightUpLeg.rotation': { x: 0.1, y: 0, z: 0 },
-             'LeftLeg.rotation': { x: 1.6, y: 0, z: 0 }, 
-             'RightLeg.rotation': { x: 1.6, y: 0, z: 0 },
-             'LeftFoot.rotation': { x: 0.5, y: 0, z: 0 },
-             'RightFoot.rotation': { x: 0.5, y: 0, z: 0 },
-
-             // 身体下沉
-             'Hips.position': { x: 0, y: 0.55, z: 0 },
-             
-             // 上身前倾低头
-             'Spine.rotation': { x: 0.2, y: 0, z: 0 },
-             'Head.rotation': { x: 0.3, y: 0, z: 0 }, 
-             
-             // 手部下垂
-             'LeftArm.rotation': { x: 0, y: 0, z: -0.2 },
-             'RightArm.rotation': { x: 0, y: 0, z: 0.2 },
-             'LeftForeArm.rotation': { x: -0.5, y: 0, z: 0 },
-             'RightForeArm.rotation': { x: -0.5, y: 0, z: 0 }
-        };
-
-        head.poseTemplates['kneel'] = {
-            // 关键：将 standing 设为 true，防止 TalkingHead 内部的 IK 逻辑干预跪下的姿态
-            // 我们通过 props 手动控制所有的骨骼和 Hips 高度
-            standing: true, sitting: false, kneeling: false, lying: false,
-            props: {
-                // 1. 身体整体下沉 (通过 Hips 位置控制)
-                // 正常 Hips 约在 0.8-1.0m，我们把它降到 0.45m，确保膝盖贴地
-                'Hips.position': { x: 0, y: 0.45, z: 0 },
-                
-                // 2. 腿部动作：模拟跪地姿态
-                // 大腿 (UpLeg): 垂直 (x=0)
-                // 小腿 (Leg): 向后折叠 (x=1.8 约100度)
-                // 脚 (Foot): 脚背贴地 (x=0.5)
-                'LeftUpLeg.rotation': { x: 0, y: 0.1, z: 0 }, // 稍微外八一点
-                'RightUpLeg.rotation': { x: 0, y: -0.1, z: 0 },
-                
-                'LeftLeg.rotation': { x: 1.8, y: 0, z: 0 }, 
-                'RightLeg.rotation': { x: 1.8, y: 0, z: 0 },
-                
-                'LeftFoot.rotation': { x: 0.8, y: 0, z: 0 },
-                'RightFoot.rotation': { x: 0.8, y: 0, z: 0 },
-
-                // 3. 上半身：顺从姿态
-                'Spine.rotation': { x: 0.3, y: 0, z: 0 }, // 前倾
-                'Head.rotation': { x: 0.4, y: 0, z: 0 },  // 低头
-                
-                // 4. 手部：自然垂下放在身前
-                'LeftArm.rotation': { x: -0.2, y: 0, z: -0.2 },
-                'RightArm.rotation': { x: -0.2, y: 0, z: 0.2 },
-                'LeftForeArm.rotation': { x: -0.5, y: 0, z: 0 },
-                'RightForeArm.rotation': { x: -0.5, y: 0, z: 0 },
-                
-                // 5. 表情：恳求
-                'viseme_O': 0.3, 
-                'browInnerUp': 1.0, 
-                'eyesLookDown': 0.8 
-            }
-        };
-
-        // 加载 Avatar
-        // 默认加载 brunette 模型
-        // 修正路径：确保使用存在的 brunette.glb
-        const defaultModel = './avatars/brunette.glb';
-        
-        await head.showAvatar({
-            url: defaultModel,
-            body: 'F',
-            avatarMood: 'neutral',
-            lipsyncLang: 'en'
-        }, (ev) => {
-            if (ev.lengthComputable) {
-                let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
-                nodeLoading.textContent = "Loading " + val + "%";
-            }
-        });
-
-        const nodeModelToggle = document.getElementById('modelToggle');
-        const nodeModal = document.getElementById('modelSettingsModal');
-        const nodeCloseBtn = document.getElementById('closeModelModal');
-        const nodeApplyBtn = document.getElementById('applyModelSettings');
-        
-        // 模态框逻辑
-        if (nodeModelToggle && nodeModal) {
-            // 打开模态框
-            nodeModelToggle.addEventListener('click', () => {
-                nodeModal.style.display = 'flex';
-                // 强制重绘以触发 transition
-                requestAnimationFrame(() => {
-                    nodeModal.classList.add('show');
-                });
-            });
-
-            // 关闭模态框函数
-            const closeModal = () => {
-                nodeModal.classList.remove('show');
-                setTimeout(() => {
-                    nodeModal.style.display = 'none';
-                }, 300);
-            };
-
-            if (nodeCloseBtn) nodeCloseBtn.addEventListener('click', closeModal);
-            
-            // 点击遮罩层关闭
-            nodeModal.addEventListener('click', (e) => {
-                if (e.target === nodeModal) closeModal();
-            });
-
-            // 选项选择逻辑
-            const modelCards = document.querySelectorAll('#modelOptions .option-card');
-            const voiceCards = document.querySelectorAll('#voiceOptions .option-card');
-
-            modelCards.forEach(card => {
-                if (card.id === 'importModelBtn') return;
-                card.addEventListener('click', () => {
-                    document.querySelectorAll('#modelOptions .option-card').forEach(c => c.classList.remove('active'));
-                    card.classList.add('active');
-                });
-            });
-
-            voiceCards.forEach(card => {
-                card.addEventListener('click', () => {
-                    document.querySelectorAll('#voiceOptions .option-card').forEach(c => c.classList.remove('active'));
-                    card.classList.add('active');
-                });
-            });
-
-            // 应用更改
-            if (nodeApplyBtn) {
-                nodeApplyBtn.addEventListener('click', async () => {
-                    try {
-                        const selectedModel = document.querySelector('#modelOptions .option-card.active');
-                        const selectedVoice = document.querySelector('#voiceOptions .option-card.active');
-                        
-                        if (!selectedModel || !selectedVoice) return;
-
-                        nodeApplyBtn.disabled = true;
-                        nodeApplyBtn.textContent = 'Applying...';
-                        
-                        // 1. 加载新模型
-                        let modelUrl = selectedModel.dataset.model;
-                        if (!modelUrl.startsWith('blob:') && !modelUrl.startsWith('http')) {
-                            modelUrl = './avatars/' + modelUrl;
-                        }
-                        const bodyType = selectedModel.dataset.body;
-                        
-                        console.log(`Switching to model: ${modelUrl}`);
-                        nodeLoading.style.display = 'block';
-                        nodeLoading.textContent = `Loading Avatar...`;
-
-                        // 针对 Robot 模型的特殊配置
-                        let mood = 'neutral';
-                        const isSpecialModel = modelUrl.includes('robot_dreams.glb') || modelUrl.includes('elonmask_animations.glb');
-                        let finalBodyType = bodyType;
-                        
-                        if (isSpecialModel) {
-                            mood = 'robot';
-                            isKneeling = false; // 确保不处于跪下状态
-                            // 关键修复：TalkingHead 的 'M' 或 'F' bodyType 默认只渲染上半身 (Half-body)
-                            // 传入 'full' 或直接不传 (或者设为空/false) 可以强制渲染全身
-                            // 对于自带完整骨骼和 Mesh 的特殊模型，我们不需要引擎来帮我们“截肢”
-                            finalBodyType = 'F'; // 'F' 通常代表 Full body，'M' 代表 Half/Mid body (视引擎版本而定，也可能是 Male/Female)
-                            // 如果 'F' 也不行，我们可以尝试传入 null
-                            if (modelUrl.includes('elonmask_animations.glb')) {
-                                finalBodyType = null; // 彻底禁用引擎自带的 Body 裁剪逻辑
-                            }
-                        }
-
-                        // 保存当前模型标识，方便后续区分是 Robot 还是 Elon
-                        window.robotState.currentModelUrl = modelUrl;
-
-                        await head.showAvatar({
-                            url: modelUrl,
-                            body: finalBodyType,
-                            avatarMood: mood,
-                            lipsyncLang: 'en',
-                            preserveModelPose: isSpecialModel
-                        }, (ev) => {
-                            if (ev.lengthComputable) {
-                                let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
-                                nodeLoading.textContent = `Loading Avatar ${val}%`;
-                            }
-                        });
-
-                        // Robot 加载后播放挥手动作
-                        if (isSpecialModel) {
-                            console.log("🤖 Special Model loaded, configuring for custom animations...");
-                            head.opt.avatarIdleHeadMove = false; // 禁用闲置头部晃动
-                            head.opt.avatarSpeakingHeadMove = false; // 禁用说话头部晃动
-                            head.opt.avatarIgnoreCamera = true; // 禁用注视摄像头
-                            head.opt.disableBalance = true; // 禁用平衡
-                            head.opt.freeze = false; // 开启 update 循环，但禁用默认动画
-                            
-                            // 仅针对 Robot 触发初始挥手
-                            if (modelUrl.includes('robot_dreams.glb')) {
-                                console.log("👋 Triggering initial wave for Robot...");
-                                robotState.isWaving = true;
-                                
-                                // 3秒后停止挥手
-                                setTimeout(() => {
-                                    robotState.isWaving = false;
-                                }, 3000);
-                            }
-                        } else {
-                            head.opt.avatarIdleHeadMove = true;
-                            head.opt.avatarSpeakingHeadMove = true;
-                            head.opt.avatarIgnoreCamera = false;
-                            head.opt.disableBalance = false;
-                            head.opt.freeze = false;
-                        }
-
-                        // 2. 切换音色
-                        if (headtts) {
-                            const voiceId = selectedVoice.dataset.voice;
-                            console.log(`Switching voice to: ${voiceId}`);
-                            nodeLoading.textContent = `Switching Voice...`;
-                            
-                            await headtts.setup({
-                                voice: voiceId,
-                                language: "en-us",
-                                speed: 1
-                            });
-                        }
-
-                        // 3. 再次强制应用 Robot 配置 (防止被音色切换重置)
-                        if (isSpecialModel) {
-                            console.log("🤖 Re-applying Special Model isolation settings...");
-                            head.opt.avatarIdleHeadMove = false;
-                            head.opt.avatarSpeakingHeadMove = false;
-                            head.opt.avatarIgnoreCamera = true;
-                            head.opt.disableBalance = true;
-                            // 确保 preserveModelPose 仍然为 true (虽然它是 avatar 属性，通常不会变)
-                            if (head.avatar) head.avatar.preserveModelPose = true;
-
-                            // 调整 Elon 模型的垂直位置 (CSS 终极物理外挂方案)
-                            if (modelUrl.includes('elonmask_animations.glb')) {
-                                setTimeout(() => {
-                                    // 强制显示所有被引擎隐藏的 Mesh
-                                    if (head.avatar && head.avatar.root) {
-                                        head.avatar.root.traverse((node) => {
-                                            if (node.isMesh && !node.visible) {
-                                                node.visible = true;
-                                                console.log("🚀 Forced hidden mesh to be visible:", node.name);
-                                            }
-                                            // 有些引擎会通过材质透明度来隐藏
-                                            if (node.material && node.material.opacity === 0) {
-                                                node.material.opacity = 1;
-                                                node.material.transparent = false;
-                                                console.log("🚀 Fixed transparent material on:", node.name);
-                                            }
-                                        });
-                                    }
-
-                                    // 撤销 CSS 物理外挂：恢复 Canvas 原始位置
-                                    const container = document.getElementById('talkinghead-container');
-                                    if (container) {
-                                        container.style.transform = 'none';
-                                        console.log("🚀 Removed CSS translation hack.");
-                                    }
-                                    
-                                    // 既然模型全身已经露出来了，我们完全依靠相机来构图
-                                    if (head.camera && head.cameraTarget) {
-                                        // 缩小模型：直接缩放根节点
-                                        if (head.avatar && head.avatar.root) {
-                                            head.avatar.root.scale.set(0.35, 0.35, 0.35); // 大幅缩小到 35%
-                                        }
-
-                                        // 相机参数也稍微配合一下
-                                        head.camera.position.y = 0.5; // 相机继续降，配合更小的模型
-                                        head.camera.position.z = 1.5; // 相机拉近
-                                        
-                                        // 聚焦点稍微往上提一点，让他居中
-                                        head.cameraTarget.y = 0.3; 
-                                        
-                                        head.camera.fov = 45; // 恢复默认视野
-                                        head.camera.updateProjectionMatrix();
-                                    }
-                                }, 500);
-                            } else {
-                                // 切换回其他模型时，恢复 CSS
-                                const container = document.getElementById('talkinghead-container');
-                                if (container) {
-                                    container.style.transform = 'none';
-                                }
-                            }
-                        }
-
-                        nodeLoading.style.display = 'none';
-                        closeModal();
-                        
-                    } catch (error) {
-                        console.error("Settings apply failed:", error);
-                        nodeLoading.textContent = "Error: " + error.message;
-                    } finally {
-                        nodeApplyBtn.disabled = false;
-                        nodeApplyBtn.textContent = 'Apply Changes';
-                    }
-                });
-            }
-        }
-
-        // 3. 配置每帧的强制更新逻辑 (Force Update Logic)
-        // 这是最强力的控制手段，可以绕过 poseTemplates 的限制
-        // 我们在每帧渲染前，手动强制修改骨骼位置和旋转
-        
-        // 缓存骨骼对象 (需要等模型加载完后初始化)
-        let bones = {};
-        
-        // 目标旋转值 (Target Rotations)
-        const kneelTarget = {
-            Hips: { y: 0.55 }, // 降低高度
-            LeftUpLeg: { x: 0, y: 0.1, z: 0 }, 
-            RightUpLeg: { x: 0, y: -0.1, z: 0 },
-            LeftLeg: { x: 1.8, y: 0, z: 0 }, // 小腿后折
-            RightLeg: { x: 1.8, y: 0, z: 0 },
-            Spine: { x: 0.3, y: 0, z: 0 }, // 身体前倾
-            Head: { x: 0.3, y: 0, z: 0 } // 低头
-        };
-
-        // 设置每帧回调
-        head.opt.update = (dt) => {
-            // 调试日志：每 100 帧打印一次，避免刷屏
-            if (!window.frameCnt) window.frameCnt = 0;
-            window.frameCnt++;
-            
-            // 🤖 强制调整特殊模型位置
-            if (head.avatar && head.avatar.root && window.robotState.yOffset !== undefined) {
-                // 持续覆盖高度，防止被引擎内部重置
-                head.avatar.root.position.y = window.robotState.yOffset;
-                // 强制更新矩阵
-                head.avatar.root.updateMatrixWorld(true);
-            }
-
-            // 🤖 Robot Custom Animation
-            if (head.avatar && head.avatar.preserveModelPose && head.armature) {
-                const now = Date.now();
-                
-                // 🕺 0. 播放自带的动画 (如跳舞)
-                if (robotState.isDancing && head.animations && head.animations.length > 0) {
-                    if (head.mixer) {
-                        // 如果还没有播放，就触发
-                        if (!robotState.danceAction) {
-                            console.log("🕺 Starting built-in animation...");
-                            const clip = head.animations[0]; // 假设第一个动画就是我们想要的 (Armature)
-                            const action = head.mixer.clipAction(clip, head.armature);
-                            action.play();
-                            action.setEffectiveWeight(1);
-                            robotState.danceAction = action;
-                        }
-                    }
-                    // 跳舞时，跳过我们自定义的闲置动画和特技，让自带动画完全接管
-                    return; 
-                } else if (robotState.danceAction) {
-                    // 停止跳舞
-                    console.log("🕺 Stopping built-in animation...");
-                    robotState.danceAction.stop();
-                    robotState.danceAction = null;
-                }
-                
-                // 1. 闲置状态：左右轻微转头 (Sine wave)
-                // 周期约 4 秒，幅度极小
-                const headBone = head.armature.getObjectByName('Head');
-
-                if (headBone) {
-                    // 初始化缓存：只记录一次初始旋转
-                    if (!headBone.userData.initialQuaternion) {
-                        headBone.userData.initialQuaternion = headBone.quaternion.clone();
-                        console.log("🤖 Robot Head bone found:", headBone);
-                        console.log("🤖 Robot Head parent:", headBone.parent);
-                        console.log("🤖 Robot Head initial rotation captured:", headBone.rotation);
-                        
-                        // 强制停止 AnimationMixer (如果有)
-                        if (head.mixer) {
-                            console.log("🤖 Stopping AnimationMixer for Robot...");
-                            head.mixer.stopAllAction();
-                        }
-                    }
-
-                    const idleAngle = Math.sin(now / 2000) * 0.1; // +/- 0.1 radians
-                    
-                    // 基于初始旋转进行叠加，而不是覆盖
-                    const qDelta = new THREE.Quaternion();
-                    qDelta.setFromAxisAngle(new THREE.Vector3(0, 1, 0), idleAngle); // 绕 Y 轴旋转
-                    
-                    headBone.quaternion.copy(headBone.userData.initialQuaternion).multiply(qDelta);
-                }
-                
-                // 4. 头部旋转特技 (Speaking Spin) - 仅限 Robot 模型
-                if (robotState.isSpinning && window.robotState.currentModelUrl && window.robotState.currentModelUrl.includes('robot_dreams.glb')) {
-                    const headBone = head.armature.getObjectByName('Head');
-                    if (headBone && headBone.userData.initialQuaternion) {
-                        const spinDuration = 1500; // 1.5秒转完720度
-                        const progress = (now - robotState.spinStartTime) / spinDuration;
-                        
-                        if (progress >= 1) {
-                            robotState.isSpinning = false; // 结束旋转
-                        } else {
-                            // 720度 = 4 * PI
-                            const spinAngle = progress * 4 * Math.PI; 
-                            
-                            // 叠加旋转 (绕 Y 轴)
-                            const qSpin = new THREE.Quaternion();
-                            qSpin.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spinAngle);
-                            
-                            // 这里的逻辑是：先取初始姿态，叠加闲置摇头(如果有)，再叠加特技旋转
-                            // 为了简化，我们直接在当前(包含闲置摇头)的 quaternion 上叠加
-                            // 或者更严谨点：基于 initialQuaternion 重新计算所有叠加
-                            // 让我们采用叠加策略：
-                            // 1. 基础 = initialQuaternion
-                            // 2. 闲置 = idleAngle (上面已经应用了)
-                            // 3. 特技 = spinAngle
-                            // 上面的代码已经设置了 headBone.quaternion = initial * idle
-                            // 所以我们只需要再 multiply(qSpin) 即可
-                            
-                            headBone.quaternion.multiply(qSpin);
-                        }
-                    }
-                }
-
-                // 🔍 调试：检查 Hips 是否在动
-                const hips = head.armature.getObjectByName('Hips');
-                if (hips && window.frameCnt % 100 === 0) {
-                    // console.log("🤖 Robot Hips Rotation:", hips.rotation);
-                }
-                
-                // ⚠️ 已移除所有强制骨骼锁定 (Hips, Spine, Neck, Shoulder)
-                // 因为 preserveModelPose + updatePoseBase 跳过逻辑已经确保了骨骼维持在初始姿态
-                // 强制设为 0 反而会导致模型扭曲 (如果初始姿态不是 0)
-                
-                // 2. 挥手动作 (基于 Quaternion 增量)
-                if (robotState.isWaving) {
-                    const rightArm = head.armature.getObjectByName('RightArm');
-                    const rightForeArm = head.armature.getObjectByName('RightForeArm');
-                    
-                    if (rightArm && rightForeArm) {
-                        // 初始化缓存
-                        if (!rightArm.userData.initialQuaternion) {
-                            rightArm.userData.initialQuaternion = rightArm.quaternion.clone();
-                        }
-                        if (!rightForeArm.userData.initialQuaternion) {
-                            rightForeArm.userData.initialQuaternion = rightForeArm.quaternion.clone();
-                        }
-
-                        // 计算动画进度 (0~1)
-                        // 简单起见，我们假设一直挥手，不计算 fade in/out
-                        // 如果要平滑，可以用 lerp
-                        
-                        // 抬起大臂 (绕 X 轴旋转，如果是往后了，可能是 Z 轴反了，或者需要绕 X 轴)
-                        // 试错调整：
-                        // 如果之前绕 Z 轴 (0,0,1) 往后了，那可能需要绕 X 轴 (1,0,0) 或者负 Z
-                        // 对于 Mixamo T-Pose:
-                        // X轴: 抬起/放下
-                        // Y轴: 前后摆动
-                        // Z轴: 扭转
-                        // 但不同软件导出轴向不同。
-                        
-                        // 修正方案：尝试绕 X 轴旋转 (通常是抬起)
-                        // 如果之前是 Z 轴 2.5 rad 导致往后，那可能是扭转过头了或者轴错了。
-                        // 让我们尝试改为 X 轴旋转 -2.0 (负值通常是向上抬，取决于右手坐标系)
-                        const liftAngle = -2.5; 
-                        const qLift = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), liftAngle);
-                        
-                        // 我们希望平滑抬起，所以使用 slerp
-                        // 但这里每帧都运行，我们需要一个 target quaternion
-                        const qTargetArm = rightArm.userData.initialQuaternion.clone().multiply(qLift);
-                        rightArm.quaternion.slerp(qTargetArm, 0.1); // 0.1 是平滑系数
-
-                        // 挥动小臂 (绕 Z 轴摆动，或者 Y 轴)
-                        const waveSpeed = 8;
-                        const waveAngle = Math.sin(now / 1000 * waveSpeed) * 0.5 + 0.5; // 0.5 bias
-                        const qWave = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), waveAngle);
-                        
-                        // 小臂也是相对于初始姿态
-                        // 但小臂的初始姿态可能是弯曲的或直的
-                        const qTargetForeArm = rightForeArm.userData.initialQuaternion.clone().multiply(qWave);
-                        rightForeArm.quaternion.slerp(qTargetForeArm, 0.2);
-                    }
-                } else if (robotState.isRaisingHands) {
-                    // 3. 双手举起动作 (新增)
-                    // 模糊搜索骨骼，防止名称不匹配
-                    const leftArm = head.armature.getObjectByName('LeftArm') || findBone(head.armature, 'Arm', 'L');
-                    const rightArm = head.armature.getObjectByName('RightArm') || findBone(head.armature, 'Arm', 'R');
-                    const leftForeArm = head.armature.getObjectByName('LeftForeArm') || findBone(head.armature, 'ForeArm', 'L');
-                    const rightForeArm = head.armature.getObjectByName('RightForeArm') || findBone(head.armature, 'ForeArm', 'R');
-                    
-                    if (leftArm && rightArm && leftForeArm && rightForeArm) {
-                        // 初始化缓存 (如果还没初始化)
-                        if (!leftArm.userData.initialQuaternion) leftArm.userData.initialQuaternion = leftArm.quaternion.clone();
-                        if (!rightArm.userData.initialQuaternion) rightArm.userData.initialQuaternion = rightArm.quaternion.clone();
-                        if (!leftForeArm.userData.initialQuaternion) leftForeArm.userData.initialQuaternion = leftForeArm.quaternion.clone();
-                        if (!rightForeArm.userData.initialQuaternion) rightForeArm.userData.initialQuaternion = rightForeArm.quaternion.clone();
-
-                        // 抬起角度 (X轴负向，或者 Y 轴负向，取决于镜像)
-                        // 右手是 X -2.5 (抬起)
-                        // 左手通常是对称的。如果 X 轴朝向相同，也是 -2.5。如果 X 轴镜像，则是 +2.5。
-                        // Mixamo 骨骼通常 LeftArm 和 RightArm 的 X 轴都是指向手腕方向? 不，通常是指向外侧?
-                        // 让我们先尝试对称的 -2.5。如果不对，可能是 +2.5
-                        const liftAngle = -2.5; 
-                        
-                        // 右手
-                        const qLiftRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), liftAngle);
-                        const qTargetRight = rightArm.userData.initialQuaternion.clone().multiply(qLiftRight);
-                        rightArm.quaternion.slerp(qTargetRight, 0.2); // 0.1 -> 0.2
-
-                        // 左手 (尝试相同的 -2.5)
-                        const qLiftLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), liftAngle);
-                        const qTargetLeft = leftArm.userData.initialQuaternion.clone().multiply(qLiftLeft);
-                        leftArm.quaternion.slerp(qTargetLeft, 0.2); // 0.1 -> 0.2
-
-                        // 小臂稍微弯曲一点，显得自然
-                        const bendAngle = 0.5; // 弯曲
-                        // 右小臂 Z 轴 (内弯?)
-                        const qBendRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bendAngle); 
-                        const qTargetForeRight = rightForeArm.userData.initialQuaternion.clone().multiply(qBendRight);
-                        rightForeArm.quaternion.slerp(qTargetForeRight, 0.2); // 0.1 -> 0.2
-
-                        // 左小臂 Z 轴 (如果是镜像，可能是 -0.5)
-                        const qBendLeft = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -bendAngle);
-                        const qTargetForeLeft = leftForeArm.userData.initialQuaternion.clone().multiply(qBendLeft);
-                        leftForeArm.quaternion.slerp(qTargetForeLeft, 0.2); // 0.1 -> 0.2
-                    } else {
-                        console.warn("🤖 Missing arm bones for raise hands animation!");
-                    }
-                } else {
-                    // 如果既不挥手也不举手，恢复左手 (右手已经在上面处理了，这里补充左手恢复逻辑)
-                    // 注意：上面的 else 块只处理了右手。我们需要合并恢复逻辑。
-                    
-                    // 恢复右手 (复用上面的逻辑，但为了清晰，可以在这里统一处理所有肢体的恢复)
-                    const rightArm = head.armature.getObjectByName('RightArm');
-                    const rightForeArm = head.armature.getObjectByName('RightForeArm');
-                    if (rightArm && rightArm.userData.initialQuaternion) rightArm.quaternion.slerp(rightArm.userData.initialQuaternion, 0.1);
-                    if (rightForeArm && rightForeArm.userData.initialQuaternion) rightForeArm.quaternion.slerp(rightForeArm.userData.initialQuaternion, 0.1);
-
-                    // 恢复左手
-                    const leftArm = head.armature.getObjectByName('LeftArm');
-                    const leftForeArm = head.armature.getObjectByName('LeftForeArm');
-                    if (leftArm && leftArm.userData.initialQuaternion) leftArm.quaternion.slerp(leftArm.userData.initialQuaternion, 0.1);
-                    if (leftForeArm && leftForeArm.userData.initialQuaternion) leftForeArm.quaternion.slerp(leftForeArm.userData.initialQuaternion, 0.1);
-                }
-            }
-            
-            if (isKneeling) {
-                if (window.frameCnt % 100 === 0) console.log("Kneeling update active...");
-
-                // 确保骨骼已加载
-                if (!head.armature) return;
-
-                // 获取骨骼
-                const hips = head.armature.getObjectByName('Hips');
-                const leftLeg = head.armature.getObjectByName('LeftLeg');
-                const rightLeg = head.armature.getObjectByName('RightLeg');
-                const leftUpLeg = head.armature.getObjectByName('LeftUpLeg');
-                const rightUpLeg = head.armature.getObjectByName('RightUpLeg');
-
-                if (hips) {
-                    // 1. 强制按低 Hips (降低高度)
-                    // 使用 lerp 渐变防止瞬间跳变
-                    hips.position.y = hips.position.y * 0.9 + 0.55 * 0.1; 
-                    
-                    // 2. 强制弯曲膝盖 (修正方向)
-                    // 之前 1.8 可能是正向旋转，导致膝盖反关节
-                    // 我们尝试负值 -1.8，看看是否向后弯曲
-                    if (leftLeg) leftLeg.rotation.x = -2.0;
-                    if (rightLeg) rightLeg.rotation.x = -2.0;
-
-                    // 3. 调整大腿角度
-                    if (leftUpLeg) leftUpLeg.rotation.x = 0;
-                    if (rightUpLeg) rightUpLeg.rotation.x = 0;
-                }
-            }
-        };
-
-        // 2. 可以在此继续添加其他自定义动作...
-        // head.animEmojis['wink'] = { ... };
 
         try {
             headtts = new HeadTTS({

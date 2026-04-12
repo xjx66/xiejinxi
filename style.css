@@ -453,3 +453,26 @@ html {
     from { transform: translateY(-20px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
 }
+
+/* Avatar Options & Carousel */
+.carousel-item {
+    position: absolute;
+    width: 600px;
+    height: 800px;
+    left: 50%;
+    top: 0;
+    margin-left: -300px; /* center it horizontally */
+    transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.8s ease;
+    cursor: pointer;
+}
+.carousel-item:not(.active) {
+    filter: brightness(0.2) drop-shadow(0 0 20px rgba(0,0,0,0.8));
+    pointer-events: auto; /* Ensure clicks register */
+}
+.carousel-item.active {
+    filter: brightness(1);
+    pointer-events: none; /* Let pointer events fall through if needed, though TalkingHead usually captures them for orbiting */
+}
+.carousel-item.active canvas {
+    pointer-events: auto; /* Re-enable for the canvas so orbit controls work on the active one */
+}

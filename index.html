@@ -24,15 +24,17 @@
     <div id="offline-indicator"></div>
     <div class="container" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 60px;">
         
-        <section class="talkinghead-section" style="width: 100%; max-width: 1200px; position: relative; margin-top: -160px;">
-            <div id="talkinghead-container" style="width: 100%; height: 1000px; position: relative;"></div>
+        <section class="talkinghead-section" style="width: 100%; max-width: 960px; position: relative; margin-top: -70px; height: 800px; overflow: hidden;">
+            <div id="carousel-turntable" style="width: 100%; height: 100%; position: absolute;">
+                <!-- JS will inject model containers here -->
+            </div>
             
             <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
-            <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">
+            <div style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">
                 <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">
                 <button id="talkinghead-speak" style="display: none; padding: 12px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 16px; transition: all 0.3s;">说话</button>
             </div>
-            <div id="talkinghead-loading" style="text-align: center; color: white; margin-top: 10px; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);"></div>
+            <div id="talkinghead-loading" style="text-align: center; color: white; margin-top: 10px; position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);"></div>
         </section>
 
         <section class="decals-section" style="width: 100%; max-width: 1200px;">
@@ -50,7 +52,8 @@
                     <button id="closeModelModal" class="close-btn">&times;</button>
                 </div>
                 <div class="modal-body">
-                    <div class="setting-group">
+                    <!-- 隐藏了原来的模型选择，改用 3D 转盘 -->
+                    <div class="setting-group" style="display: none;">
                         <label>Avatar Model</label>
                         <div class="option-grid" id="modelOptions">
                             <div class="option-card active" data-model="brunette.glb" data-body="F">
