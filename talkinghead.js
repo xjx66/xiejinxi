@@ -267,16 +267,15 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         nodeLoading.textContent = "Loading Avatars...";
 
         const models = [
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true },
-            { url: 'elonmask_animations.glb', body: null, mood: 'robot', preserve: true },
             { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false },
             { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false },
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true },
             { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false }
         ];
 
         let heads = [];
-        let activeIndex = 0;
+        let activeIndex = 2; // 默认选中中间的 brunette 模型
         const itemSpacing = 300; // 平面平铺的水平间距
 
         const updateCarousel = () => {
@@ -564,8 +563,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         updateCarousel(); // 初始化时排布好所有模型
 
         // 设置默认全局 head
-        head = heads[0];
-        window.robotState.currentModelUrl = models[0].url;
+        head = heads[activeIndex];
+        window.robotState.currentModelUrl = models[activeIndex].url;
 
         // --- 剩下的原本 DOMContentLoaded 逻辑 ---
 
