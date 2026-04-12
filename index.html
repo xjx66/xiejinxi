@@ -29,6 +29,10 @@
                 <!-- JS will inject model containers here -->
             </div>
             
+            <!-- Add Navigation Arrows -->
+            <button id="carousel-prev" class="carousel-nav-btn prev-btn">&#10094;</button>
+            <button id="carousel-next" class="carousel-nav-btn next-btn">&#10095;</button>
+            
             <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
             <div style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">
                 <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">

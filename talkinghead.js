@@ -297,6 +297,38 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             });
         };
 
+        const switchModel = (newIndex) => {
+            if (newIndex < 0) newIndex = models.length - 1;
+            if (newIndex >= models.length) newIndex = 0;
+            if (activeIndex === newIndex) return;
+
+            activeIndex = newIndex;
+            updateCarousel();
+
+            head = heads[activeIndex];
+            const m = models[activeIndex];
+            window.robotState.currentModelUrl = m.url;
+            
+            heads.forEach((h, idx) => {
+                h.opt.freeze = (idx !== activeIndex);
+            });
+            
+            if (m.preserve && m.url.includes('robot_dreams.glb')) {
+                robotState.isWaving = true;
+                setTimeout(() => robotState.isWaving = false, 3000);
+            }
+        };
+
+        const btnPrev = document.getElementById('carousel-prev');
+        const btnNext = document.getElementById('carousel-next');
+
+        if (btnPrev) {
+            btnPrev.addEventListener('click', () => switchModel(activeIndex - 1));
+        }
+        if (btnNext) {
+            btnNext.addEventListener('click', () => switchModel(activeIndex + 1));
+        }
+
         // 创建各个头像容器
         for (let i = 0; i < models.length; i++) {
             const m = models[i];
@@ -306,23 +338,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             turntable.appendChild(item);
 
             item.addEventListener('click', () => {
-                if (activeIndex === i) return;
-                
-                // 切换全局引用
-                activeIndex = i;
-                updateCarousel(); // 更新所有模型的平面位置和缩放
-
-                head = heads[activeIndex];
-                window.robotState.currentModelUrl = m.url;
-                
-                // 解除当前选中的模型的冻结状态，冻结其他模型以节省性能
-                heads.forEach((h, idx) => {
-                    if (idx !== activeIndex) {
-                        h.opt.freeze = true;
-                    } else {
-                        h.opt.freeze = false;
-                    }
-                });
+                switchModel(i);
             });
 
             const h = new TalkingHead(item, {
