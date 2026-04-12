@@ -306,6 +306,26 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             item.dataset.index = i;
             turntable.appendChild(item);
 
+            item.addEventListener('click', () => {
+                if (activeIndex === i) return;
+                
+                // 切换全局引用
+                activeIndex = i;
+                updateCarousel(); // 更新所有模型的平面位置和缩放
+
+                head = heads[activeIndex];
+                window.robotState.currentModelUrl = m.url;
+                
+                // 解除当前选中的模型的冻结状态，冻结其他模型以节省性能
+                heads.forEach((h, idx) => {
+                    if (idx !== activeIndex) {
+                        h.opt.freeze = true;
+                    } else {
+                        h.opt.freeze = false;
+                    }
+                });
+            });
+
             const h = new TalkingHead(item, {
                 ttsEndpoint: "https://api.elevenlabs.io/v1/text-to-speech/", 
                 lipsyncModules: ["en"],
@@ -528,9 +548,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     }
                 }
 
-                // 核心优化：加载完成后，如果不是当前激活的，立即停止渲染循环以节省 GPU
+                // 核心优化：加载完成后，如果不是当前激活的，限制更新频率而不是完全停止
                 if (i !== activeIndex) {
-                    h.stop();
+                    h.opt.freeze = true; // 冻结骨骼更新计算，但保持模型可见
                 } else {
                     nodeLoading.style.display = 'none'; // 第一个加载完就隐藏 loading
                 }
