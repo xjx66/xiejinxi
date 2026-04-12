@@ -4,186 +4,12 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const WebSocket = require('ws');
-const chokidar = require('chokidar');
-const crypto = require('crypto');
-const https = require('https');
 
 const app = express();
 const PORT = 3000;
 
-const LOG_DIR = '/Users/bytedance/.openclaw/agents/main/sessions';
-let LOG_FILE_PATH = '';
-let logWatcher = null;
-
-// Find the latest .jsonl file (excluding .json)
-const findLatestLogFile = () => {
-    try {
-        if (!fs.existsSync(LOG_DIR)) {
-            console.error(`Log directory not found: ${LOG_DIR}`);
-            return null;
-        }
-
-        const files = fs.readdirSync(LOG_DIR)
-            .filter(file => file.endsWith('.jsonl'))
-            .map(file => {
-                const filePath = path.join(LOG_DIR, file);
-                return {
-                    path: filePath,
-                    mtime: fs.statSync(filePath).mtime
-                };
-            })
-            .sort((a, b) => b.mtime - a.mtime); // Sort by modified time descending
-
-        if (files.length > 0) {
-            console.log(`Found latest log file: ${files[0].path}`);
-            return files[0].path;
-        } else {
-            console.log('No .jsonl files found in log directory');
-        }
-    } catch (err) {
-        console.error(`Error finding latest log file: ${err.message}`);
-    }
-    return null;
-};
-
 // Create HTTP server
 const server = http.createServer(app);
-
-// Create WebSocket server
-const wss = new WebSocket.Server({ server });
-
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-    ws.on('close', () => console.log('Client disconnected'));
-});
-
-// Broadcast function
-const broadcast = (data) => {
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
-        }
-    });
-};
-
-// File watching logic
-let lastSize = 0;
-
-const startWatching = (filePath) => {
-    if (logWatcher) {
-        logWatcher.close();
-        console.log('Stopped watching previous log file');
-    }
-
-    if (!filePath) {
-        console.log('No log file to watch');
-        return;
-    }
-
-    LOG_FILE_PATH = filePath;
-    console.log(`Starting to watch: ${LOG_FILE_PATH}`);
-
-    // Initialize lastSize
-    try {
-        const stats = fs.statSync(LOG_FILE_PATH);
-        lastSize = stats.size;
-        console.log(`Initial log file size: ${lastSize}`);
-    } catch (err) {
-        console.error(`Error reading log file: ${err.message}`);
-        return;
-    }
-
-    // Watch for file changes
-    logWatcher = chokidar.watch(LOG_FILE_PATH, {
-        persistent: true,
-        usePolling: true, // Force polling to detect changes on some file systems
-        interval: 1000,
-        binaryInterval: 1000
-    });
-    
-    logWatcher.on('change', (path) => {
-        console.log(`Log file changed detected: ${path}`); // Debug log
-        fs.stat(path, (err, stats) => {
-            if (err) {
-                console.error(`Error reading file stats: ${err}`);
-                return;
-            }
-
-            console.log(`File size check - Old: ${lastSize}, New: ${stats.size}`);
-
-            if (stats.size > lastSize) {
-                const stream = fs.createReadStream(path, {
-                    start: lastSize,
-                    end: stats.size
-                });
-
-                let newData = '';
-                stream.on('data', (chunk) => {
-                    newData += chunk;
-                });
-
-                stream.on('end', () => {
-                    console.log(`Read ${newData.length} bytes of new data`);
-                    lastSize = stats.size;
-                    // Process new lines
-                    const lines = newData.split('\n').filter(line => line.trim() !== '');
-                    
-                    lines.forEach(line => {
-                        try {
-                            const json = JSON.parse(line);
-                            // Debug log for JSON content
-                            // console.log('Parsed JSON:', JSON.stringify(json).substring(0, 100) + '...');
-                            
-                            // Check if it's a message from assistant
-                            if (json.type === 'message' && json.message && json.message.role === 'assistant') {
-                                const content = json.message.content;
-                                let textToSpeak = "";
-
-                                if (Array.isArray(content)) {
-                                    // Extract text parts, ignoring thinking parts
-                                    const textParts = content.filter(c => c.type === 'text');
-                                    textToSpeak = textParts.map(c => c.text).join(' ');
-                                } else if (typeof content === 'string') {
-                                    textToSpeak = content;
-                                }
-
-                                if (textToSpeak) {
-                                    console.log(`Broadcasting new assistant message: ${textToSpeak.substring(0, 50)}...`);
-                                    broadcast({
-                                        type: 'assistant_message',
-                                        text: textToSpeak
-                                    });
-                                } else {
-                                    console.log('Assistant message found but no text content extracted');
-                                }
-                            }
-                        } catch (e) {
-                            console.error('Error parsing JSON line:', e);
-                        }
-                    });
-                });
-            } else if (stats.size < lastSize) {
-                // File truncated (e.g., log rotation or overwrite), reset lastSize
-                console.log('File truncated, resetting lastSize to 0');
-                lastSize = 0;
-            }
-        });
-    });
-};
-
-// Initial setup
-startWatching(findLatestLogFile());
-
-// Watch directory for new files to switch automatically
-chokidar.watch(LOG_DIR, { ignoreInitial: true }).on('add', (filePath) => {
-    if (filePath.endsWith('.jsonl')) {
-        console.log(`New session file detected: ${filePath}`);
-        // Wait a bit to ensure file is ready, then switch
-        setTimeout(() => startWatching(filePath), 1000);
-    }
-});
 
 // 配置 CORS
 app.use(cors({
@@ -191,6 +17,29 @@ app.use(cors({
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// 代理配置
+const apiProxy = createProxyMiddleware({
+    target: 'https://ark.cn-beijing.volces.com',
+    changeOrigin: true,
+    pathRewrite: {
+        '^/api/proxy': '' // 去掉 /api/proxy 前缀
+    },
+    onProxyReq: (proxyReq, req, res) => {
+        if (req.method === 'POST' && req.body) {
+            // 如果必须放在 body parser 后面，可以在这里重新写入 body，但最好是把 proxy 放在前面
+            // 此处我们将 proxy 放在 body parser 前面，所以不会有 body 被消费的问题
+        }
+        console.log(`Proxying ${req.method} request to: ${proxyReq.host}${proxyReq.path}`);
+    },
+    onError: (err, req, res) => {
+        console.error('Proxy Error:', err);
+        res.status(500).json({ error: 'Proxy Error', message: err.message });
+    }
+});
+
+// 注册代理路由 (必须在 express.json() 之前，否则会因为 stream 被消费而卡住)
+app.use('/api/proxy', apiProxy);
 
 // Body parser for Tencent Cloud API
 app.use(express.json({ limit: '50mb' }));
@@ -206,28 +55,6 @@ app.use((req, res, next) => {
 app.get('/ping', (req, res) => {
     res.send('pong');
 });
-
-// 代理配置
-const apiProxy = createProxyMiddleware({
-    target: 'https://ark.cn-beijing.volces.com',
-    changeOrigin: true,
-    pathRewrite: {
-        '^/api/proxy': '' // 去掉 /api/proxy 前缀
-    },
-    onProxyReq: (proxyReq, req, res) => {
-        if (req.method === 'POST') {
-            proxyReq.setHeader('Content-Type', 'application/json');
-        }
-        console.log(`Proxying ${req.method} request to: ${proxyReq.host}${proxyReq.path}`);
-    },
-    onError: (err, req, res) => {
-        console.error('Proxy Error:', err);
-        res.status(500).json({ error: 'Proxy Error', message: err.message });
-    }
-});
-
-// 注册代理路由
-app.use('/api/proxy', apiProxy);
 
 // -----------------------------------------------------------------------
 // Tencent Cloud Hunyuan 3D API Proxy (New Version)
@@ -339,7 +166,5 @@ server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     console.log(`- Static files served from: ${__dirname}`);
     console.log(`- Proxy endpoint: http://localhost:${PORT}/api/proxy/api/coding/v3/chat/completions`);
-    console.log(`- Watching log file: ${LOG_FILE_PATH}`);
-    console.log(`- WebSocket server ready`);
     console.log(`- Open http://localhost:${PORT} in your browser`);
 });
