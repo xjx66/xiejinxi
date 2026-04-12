@@ -548,23 +548,35 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         robotState.isWaving = true;
                         setTimeout(() => robotState.isWaving = false, 3000);
                     }
+                }
+
+                // 动态计算模型的 3D 边界框，将 Tag 放置在模型头顶 30 像素处
+                const item = turntable.querySelector(`.carousel-item[data-index="${i}"]`);
+                const tag = item.querySelector('.avatar-tag');
+                if (tag && h.avatar && h.avatar.root && h.camera) {
+                    // 确保矩阵更新，以获得正确的 3D 位置
+                    h.avatar.root.updateMatrixWorld(true);
                     
-                    if (m.url.includes('elonmask_animations.glb')) {
-                        if (h.camera && h.cameraTarget) {
-                            if (h.avatar && h.avatar.root) {
-                                h.avatar.root.scale.set(0.315, 0.315, 0.315); // 缩小10% (0.35 * 0.9 = 0.315)
-                            }
-                            h.camera.position.y = 0.9; // 向上移动，值越大，人物显得越靠下，所以我们需要减小值？
-                            // 我们要让模型向上移动 400 像素，在 3D 空间中，我们需要将相机向下移动
-                            // 原来的 camera.position.y = 0.5，cameraTarget.y = 0.3
-                            // 减小 y 值会让相机往下看，模型在画面中会往上走
-                            h.camera.position.y = -0.5; // 相机向下移动
-                            h.cameraTarget.y = -0.7; // 目标也向下移动
-                            h.camera.position.z = 1.5; 
-                            h.camera.fov = 45; 
-                            h.camera.updateProjectionMatrix();
-                        }
-                    }
+                    // 计算 3D Bounding Box
+                    const box = new THREE.Box3().setFromObject(h.avatar.root);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    
+                    // 取模型的顶部中心点
+                    const topPoint = new THREE.Vector3(center.x, box.max.y, center.z);
+                    
+                    // 投影到摄像机的 2D 坐标系中（范围 [-1, 1]）
+                    topPoint.project(h.camera);
+                    
+                    // 转换为容器内部的 CSS 像素坐标 (从顶部往下)
+                    const clientHeight = item.clientHeight || 800;
+                    const topPixel = (-(topPoint.y - 1) / 2) * clientHeight;
+                    
+                    // 限制在一个安全的范围，避免模型异常导致标签飞出屏幕
+                    const safeTopPixel = Math.max(40, Math.min(topPixel, clientHeight - 100));
+                    
+                    // 固定在模型顶部再往上 30 像素
+                    tag.style.top = `${safeTopPixel - 30}px`;
                 }
 
                 // 核心优化：加载完成后，如果不是当前激活的，限制更新频率而不是完全停止
