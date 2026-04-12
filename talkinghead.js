@@ -175,25 +175,16 @@ window.processActions = (text) => {
     return cleanText.replace(/\s+/g, ' ').trim();
 };
 
-async function callVolcengineAI(userMessage, nodeLoading) {
+async function callVolcengineAI(userMessage, nodeLoading, customPersonality = "") {
+    console.log("🚀 Calling Volcengine AI...");
+    if (nodeLoading) nodeLoading.textContent = "AI thinking...";
+
     conversationHistory.push({
         role: "user",
         content: userMessage
     });
 
-    try {
-        const response = await fetch(PROXY_API_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${VOLCENGINE_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "ark-code-latest",
-                messages: [
-                    {
-                        role: "system",
-                        content: `You are a friendly AI assistant with a 3D avatar. 
+    const baseSystemPrompt = `${customPersonality || "You are a friendly AI assistant with a 3D avatar."}
 Please answer questions in a concise and conversational way (max 3 sentences).
 IMPORTANT: You MUST include at least one [expression] or [action] tag in every response to make the avatar alive.
 If the user asks you to "raise hands" or "hands up", you MUST use the [handup] tag.
@@ -218,7 +209,21 @@ Available tags:
 [kneel] - Kneel down and beg
 [stand] - Stand up
 
-Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Please forgive me."`
+Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Please forgive me."`;
+
+    try {
+        const response = await fetch(PROXY_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${VOLCENGINE_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "ark-code-latest",
+                messages: [
+                    {
+                        role: "system",
+                        content: baseSystemPrompt
                     },
                     ...conversationHistory
                 ],
@@ -264,14 +269,15 @@ document.addEventListener('DOMContentLoaded', async function(e) {
     if (!turntable) return;
 
     try {
-        nodeLoading.textContent = "Loading Avatars...";
+        // 彻底隐藏 loading，不显示文字
+        if (nodeLoading) nodeLoading.style.display = 'none';
 
         const models = [
-            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: 'Avaturn', status: '在职' },
-            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: 'AvatarSDK', status: '已离职' },
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: 'Brunette', status: '在职' },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: 'Robot', status: '在职' },
-            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: 'MPFB', status: '已离职' }
+            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
+            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of Jinxi (Big Brother). How can I help you?" Always maintain this identity.' },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with Jinxi(Big Brother), who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
+            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
         ];
 
         let heads = [];
@@ -283,8 +289,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             items.forEach((item, j) => {
                 const offset = j - activeIndex;
                 const tx = offset * itemSpacing;
-                // 这里是我们需要的终极暴力缩放！直接把整个 DOM 容器缩小到 0.73！
-                const scale = 0.73; 
+                // 这里是我们需要的终极暴力缩放！直接把整个 DOM 容器缩小到 0.85！
+                const scale = 0.85; 
                 const zIndex = offset === 0 ? 10 : 5 - Math.abs(offset);
                 
                 item.style.transform = `translateX(${tx}px) scale(${scale})`;
@@ -317,6 +323,32 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             if (m.preserve && m.url.includes('robot_dreams.glb')) {
                 robotState.isWaving = true;
                 setTimeout(() => robotState.isWaving = false, 3000);
+            }
+            
+            // 根据状态控制聊天输入框的显示与隐藏，并更新提示词
+            const inputContainer = document.getElementById('talkinghead-input-container');
+            const inputText = document.getElementById('talkinghead-text');
+            if (inputContainer) {
+                if (m.status === '已离职') {
+                    inputContainer.style.opacity = '0';
+                    inputContainer.style.pointerEvents = 'none'; // 防止透明状态下依然可以点击
+                } else {
+                    inputContainer.style.opacity = '1';
+                    inputContainer.style.pointerEvents = 'auto';
+                    if (inputText) {
+                        inputText.placeholder = `say hi to ${m.name}...`;
+                    }
+                }
+            }
+            
+            // 动态切换 TTS 声音 (离职模型不设置声音，在职模型读取自己的专属 voice)
+            if (window.headtts) {
+                if (m.status === '已离职' || !m.voice) {
+                    // 已离职不分配声音，或者未来想彻底禁用 TTS 可以给引擎发个空，或者直接略过
+                    // 只要聊天框被隐藏，用户也无法触发说话
+                } else {
+                    window.headtts.setup({ voice: m.voice });
+                }
             }
         };
 
@@ -374,6 +406,16 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             tag.className = 'avatar-tag';
             const statusClass = m.status === '在职' ? 'active-status' : 'inactive-status';
             tag.innerHTML = `<span class="avatar-name">${m.name}</span><span class="avatar-status ${statusClass}">${m.status}</span>`;
+            
+            // 手动调整特定模型标签的固定位置 (默认是 top: 40px)
+            if (m.name === '博特兔') {
+                tag.style.top = '250px'; // 往下移动 200 像素，再往下移动 40 像素，所以是 250px (以210为基础往下40)
+            } else if (m.name === '3号' || m.name === '4号') {
+                tag.style.top = '10px';  // 之前是0px（即上移40px），现在往下移动 10 像素，所以是 10px
+            } else if (m.name === '博特万') {
+                tag.style.top = '50px';  // 默认是 40px，往下移动 10 像素，所以是 50px
+            }
+            
             item.appendChild(tag);
 
             const h = new TalkingHead(item, {
@@ -436,6 +478,36 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
 
                 if (h.avatar && h.avatar.preserveModelPose && h.armature) {
+                    const t = Date.now() / 1000;
+                    const rootBone = h.armature.getObjectByName('Root') || h.armature.getObjectByName('mixamorigRoot') || h.armature;
+                    const headBone = h.armature.getObjectByName('Head') || h.armature.getObjectByName('mixamorigHead');
+
+                    // Robot Speaking Spin Animation
+                    if (robotState.isSpinning) {
+                        if (rootBone) {
+                            // 身体微动
+                            rootBone.rotation.y = Math.sin(t * 3) * 0.05;
+                        }
+                        if (headBone) {
+                            // 说话时：头部 360 度持续旋转 (根据时间 t 线性增加角度)
+                            // t * 5 表示旋转速度，你可以调整这个 5 来控制转得快还是慢
+                            headBone.rotation.y = t * 5; 
+                            headBone.rotation.x = 0;
+                            headBone.rotation.z = 0;
+                        }
+                    } else {
+                        // Reset rotation when not spinning
+                        if (rootBone) rootBone.rotation.y = 0;
+                        if (headBone) {
+                            // Idle状态：头部微微动即可，降低幅度
+                            // 为了平滑过渡，建议将 360 度旋转的状态重置为 0，或者继续微动
+                            // 这里我们让它回归到极小幅度的正弦波摇晃
+                            headBone.rotation.y = Math.sin(t * 2) * 0.08; 
+                            headBone.rotation.x = Math.sin(t * 1.5) * 0.02;
+                            headBone.rotation.z = 0;
+                        }
+                    }
+
                     if (robotState.isDancing && h.animations && h.animations.length > 0) {
                         if (h.mixer && !robotState.danceAction) {
                             const clip = h.animations[0];
@@ -451,9 +523,11 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     }
 
                     if (!robotState.isDancing && !robotState.isRaisingHands && !robotState.isWaving) {
-                        if (h.animations && h.animations.length > 1) {
+                        // Play Idle Animation
+                        if (h.animations && h.animations.length > 0) {
                             if (h.mixer && !robotState.idleAction) {
-                                const idleClip = h.animations[1];
+                                // Try to find an idle clip, default to the first one
+                                const idleClip = h.animations.find(a => a.name.toLowerCase().includes('idle')) || h.animations[0];
                                 const idleAction = h.mixer.clipAction(idleClip, h.armature);
                                 idleAction.play();
                                 idleAction.setEffectiveWeight(1);
@@ -549,8 +623,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         // 改回并发加载所有模型
         const loadAllAvatars = async () => {
-            nodeLoading.style.display = 'block';
-            nodeLoading.textContent = "Loading Avatars...";
+            // 移除 Loading Avatars 的显示
+            // nodeLoading.style.display = 'block';
+            // nodeLoading.textContent = "Loading Avatars...";
 
             const loadPromises = models.map(async (m, i) => {
                 const h = heads[i];
@@ -585,52 +660,23 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
                 
                 // 将 AVATARSDK 和 AVATURN 模型向下移动 30 像素 (通过调整相机 Y 轴和目标)
-                if (m.url.includes('avaturn.glb') || m.url.includes('avatarsdk.glb')) {
+                if (m.url.includes('avaturn.glb')) {
                     if (h.camera && h.cameraTarget) {
-                        // 在 3D 中，要让模型向下移动，需要将摄像机向上移动
                         // 原本默认的 camera.position.y 是 0.2，向上移动约 0.05 对应屏幕上大约 30px
                         h.camera.position.y += 0.05; 
                         h.cameraTarget.y += 0.05;
                         h.camera.updateProjectionMatrix();
                     }
                 }
-
-                // 动态计算模型的 3D 边界框，将 Tag 放置在模型头顶 30 像素处
-                const item = turntable.querySelector(`.carousel-item[data-index="${i}"]`);
-                const tag = item.querySelector('.avatar-tag');
-                if (tag && h.avatar && h.avatar.root && h.camera) {
-                    // 确保矩阵更新，以获得正确的 3D 位置
-                    h.avatar.root.updateMatrixWorld(true);
-                    
-                    let topPoint = new THREE.Vector3();
-                    // 尝试获取头部骨骼
-                    const headBone = h.avatar.root.getObjectByName('Head') || 
-                                     h.avatar.root.getObjectByName('head') || 
-                                     h.avatar.root.getObjectByName('mixamorigHead');
-                                     
-                    if (headBone) {
-                        headBone.getWorldPosition(topPoint);
-                        topPoint.y += 0.25; // 3D 空间中在头顶上方再加一点点偏移，以适应头发/帽子
-                    } else {
-                        // 降级方案：计算 3D Bounding Box
-                        const box = new THREE.Box3().setFromObject(h.avatar.root);
-                        const center = new THREE.Vector3();
-                        box.getCenter(center);
-                        topPoint.set(center.x, box.max.y, center.z);
+                
+                // 将 4号模型 (AvatarSDK) 单独向下移动 (原来的 30 像素 + 额外的 40 像素)
+                if (m.url.includes('avatarsdk.glb')) {
+                    if (h.camera && h.cameraTarget) {
+                        // 0.05 约等于 30px，再加 40px 大约是 0.067，总共约为 0.117
+                        h.camera.position.y += 0.117; 
+                        h.cameraTarget.y += 0.117;
+                        h.camera.updateProjectionMatrix();
                     }
-                    
-                    // 投影到摄像机的 2D 坐标系中（范围 [-1, 1]）
-                    topPoint.project(h.camera);
-                    
-                    // 转换为容器内部的 CSS 像素坐标 (从顶部往下)
-                    const clientHeight = item.clientHeight || 800;
-                    const topPixel = (-(topPoint.y - 1) / 2) * clientHeight;
-                    
-                    // 限制在一个安全的范围，避免模型异常导致标签飞出屏幕
-                    const safeTopPixel = Math.max(40, Math.min(topPixel, clientHeight - 100));
-                    
-                    // 固定在模型顶部再往上 30 像素
-                    tag.style.top = `${safeTopPixel - 30}px`;
                 }
 
                 // 核心优化：加载完成后，如果不是当前激活的，限制更新频率而不是完全停止
@@ -652,6 +698,19 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         // 延迟执行一次 updateCarousel，确保 DOM 已完全渲染并添加到页面中
         setTimeout(() => {
             updateCarousel(); // 初始化时排布好所有模型
+            
+            // 初始化时检查一次输入框状态
+            const m = models[activeIndex];
+            const inputContainer = document.getElementById('talkinghead-input-container');
+            const inputText = document.getElementById('talkinghead-text');
+            if (inputContainer) {
+                if (m.status === '已离职') {
+                    inputContainer.style.opacity = '0';
+                    inputContainer.style.pointerEvents = 'none';
+                } else if (inputText) {
+                    inputText.placeholder = `say hi to ${m.name}...`;
+                }
+            }
         }, 100);
 
         // 设置默认全局 head
@@ -694,7 +753,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         nodeText.style.cursor = 'not-allowed';
                         // nodeSpeak.textContent = "思考中..."; // 按钮已隐藏，不需要更新文字
                         
-                        const aiResponse = await callVolcengineAI(text, nodeLoading);
+                        const currentModel = models[activeIndex];
+                        const aiResponse = await callVolcengineAI(text, nodeLoading, currentModel.personality);
                         
                         window.lastAiResponse = aiResponse; // 记录原始回复
                         
@@ -743,7 +803,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         }
 
         try {
-            headtts = new HeadTTS({
+            window.headtts = new HeadTTS({
                 endpoints: ["webgpu", "wasm"],
                 languages: ["en-us"],
                 voices: ["af_bella", "af_sarah", "am_adam", "am_michael"],
@@ -752,6 +812,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 audioCtx: head.audioCtx,
                 trace: 0
             });
+            headtts = window.headtts; // 修改外层的 headtts 变量，不要用 let 重新声明
 
             // 简单的音频播放队列
             window.robotAudioQueue = [];
@@ -760,6 +821,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             const playNextRobotAudio = (audioCtx) => {
                 if (window.robotAudioQueue.length === 0) {
                     window.isRobotPlaying = false;
+                    window.robotState.isSpinning = false; // 队列播完，停止说话状态
                     return;
                 }
 
@@ -848,12 +910,12 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
             };
 
-            nodeLoading.textContent = "Loading TTS...";
+            // nodeLoading.textContent = "Loading TTS...";
             await headtts.connect(null, (ev) => {
                 if (ev) {
                     if (ev.lengthComputable) {
                         let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
-                        nodeLoading.textContent = "Loading TTS " + val + "%";
+                        // nodeLoading.textContent = "Loading TTS " + val + "%";
                     }
                 }
             });

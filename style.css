@@ -6,7 +6,7 @@
 }
 
 [data-theme="light"] {
-    --bg-color: #f0f2f5;
+    --bg-color: #d9d9d9; /* 从 #f0f2f5 调暗一点，更偏向护眼的浅灰色 */
     --text-color: #1a1a1a;
     --card-bg: rgba(0, 0, 0, 0.05);
 }
@@ -469,6 +469,11 @@ html {
     filter: brightness(0.6) drop-shadow(0 0 10px rgba(0,0,0,0.5));
     cursor: pointer;
 }
+
+[data-theme="light"] .carousel-item:not(.active) {
+    filter: brightness(0.8); /* 白天模式下只变暗一点，去掉阴影 */
+}
+
 .carousel-item.active {
     filter: brightness(1);
 }
@@ -476,7 +481,7 @@ html {
 /* Avatar Tag Styles */
 .avatar-tag {
     position: absolute;
-    top: 40px; /* 距离模型容器顶部 40px */
+    top: 40px; /* 距离模型容器顶部 40px，作为统一默认值 */
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -491,12 +496,21 @@ html {
     text-shadow: 0 1px 4px rgba(0,0,0,0.8); /* 简单的文字阴影保证在复杂背景下也能看清 */
 }
 
+[data-theme="light"] .avatar-tag {
+    color: #000;
+    text-shadow: none; /* 白天模式去掉文字阴影 */
+}
+
 .avatar-name {
     font-size: 14px;
     font-weight: 500;
     letter-spacing: 1px;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="light"] .avatar-name {
+    color: rgba(0, 0, 0, 0.9); /* 白天模式名字用深黑色 */
 }
 
 .avatar-status {
@@ -510,6 +524,51 @@ html {
     color: rgba(255, 255, 255, 0.5); /* 浅灰色表示在职 */
 }
 
+[data-theme="light"] .avatar-status.active-status {
+    color: rgba(0, 0, 0, 0.5); /* 白天模式在职状态用灰色 */
+}
+
 .avatar-status.inactive-status {
     color: rgba(255, 255, 255, 0.3); /* 更暗的灰色表示离职 */
+}
+
+[data-theme="light"] .avatar-status.inactive-status {
+    color: rgba(0, 0, 0, 0.3); /* 白天模式离职状态用浅灰色 */
+}
+
+/* Breathing animation for input focus using only black, white, and gray */
+@keyframes breathe-monochrome {
+    0% {
+        box-shadow: 0 0 5px rgba(200, 200, 200, 0.2);
+        border-color: rgba(200, 200, 200, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.8), 0 0 20px rgba(150, 150, 150, 0.4);
+        border-color: rgba(255, 255, 255, 1);
+    }
+    100% {
+        box-shadow: 0 0 5px rgba(200, 200, 200, 0.2);
+        border-color: rgba(200, 200, 200, 0.4);
+    }
+}
+
+#talkinghead-text:focus {
+    outline: none !important;
+    animation: breathe-monochrome 2s ease-in-out infinite;
+}
+
+/* 白天模式下输入框适配 */
+[data-theme="light"] #talkinghead-text {
+    background: rgba(255, 255, 255, 0.7) !important;
+    color: #333 !important;
+    border-color: rgba(0, 0, 0, 0.2) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] #talkinghead-text::placeholder {
+    color: rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="light"] #talkinghead-loading {
+    color: #333 !important;
 }

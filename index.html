@@ -30,11 +30,11 @@
             </div>
             
             <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
-            <div style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">
+            <div id="talkinghead-input-container" style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10; transition: opacity 0.3s ease;">
                 <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">
                 <button id="talkinghead-speak" style="display: none; padding: 12px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 16px; transition: all 0.3s;">说话</button>
             </div>
-            <div id="talkinghead-loading" style="text-align: center; color: white; margin-top: 10px; position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);"></div>
+            <div id="talkinghead-loading" style="display: none; text-align: center; color: rgba(255,255,255,0.6); margin-top: 10px; position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);"></div>
         </section>
 
         <section class="decals-section" style="width: 100%; max-width: 1200px;">
@@ -45,75 +45,7 @@
             <div id="robot-container" style="width: 100%; height: 600px; position: relative;"></div>
         </section>
 
-        <div id="modelSettingsModal" class="modal-overlay" style="display: none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Character Settings</h3>
-                    <button id="closeModelModal" class="close-btn">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <!-- 隐藏了原来的模型选择，改用 3D 转盘 -->
-                    <div class="setting-group" style="display: none;">
-                        <label>Avatar Model</label>
-                        <div class="option-grid" id="modelOptions">
-                            <div class="option-card active" data-model="brunette.glb" data-body="F">
-                                <span class="option-icon">👩</span>
-                                <span class="option-name">Brunette</span>
-                            </div>
-                            <div class="option-card" data-model="avaturn.glb" data-body="M">
-                                <span class="option-icon">👨</span>
-                                <span class="option-name">Avaturn</span>
-                            </div>
-                            <div class="option-card" data-model="avatarsdk.glb" data-body="M">
-                                <span class="option-icon">🧔</span>
-                                <span class="option-name">SDK</span>
-                            </div>
-                            <div class="option-card" data-model="mpfb.glb" data-body="F">
-                                <span class="option-icon">👵</span>
-                                <span class="option-name">MPFB</span>
-                            </div>
-                            <div class="option-card" data-model="robot_dreams.glb" data-body="M">
-                                <span class="option-icon">🤖</span>
-                                <span class="option-name">Robot</span>
-                            </div>
-                            <div class="option-card" data-model="elonmask_animations.glb" data-body="M">
-                                <span class="option-icon">🚀</span>
-                                <span class="option-name">Elon</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>Voice</label>
-                        <div class="option-grid" id="voiceOptions">
-                            <div class="option-card active" data-voice="af_bella">
-                                <span class="option-icon">🔊</span>
-                                <span class="option-name">Bella (F)</span>
-                            </div>
-                            <div class="option-card" data-voice="af_sarah">
-                                <span class="option-icon">🔊</span>
-                                <span class="option-name">Sarah (F)</span>
-                            </div>
-                            <div class="option-card" data-voice="am_adam">
-                                <span class="option-icon">🔉</span>
-                                <span class="option-name">Adam (M)</span>
-                            </div>
-                            <div class="option-card" data-voice="am_michael">
-                                <span class="option-icon">🔉</span>
-                                <span class="option-name">Michael (M)</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button id="applyModelSettings" class="primary-btn">Apply Changes</button>
-                </div>
-            </div>
-        </div>
-
         <button id="themeToggle" class="theme-toggle">🌖</button>
-        <button id="modelToggle" class="model-toggle">👤</button>
-        <button id="eyeTrackingToggle" class="eye-tracking-toggle">👁️</button>
 
         <div id="hearts-container"></div>
         <div id="cursor-follower"></div>
@@ -121,8 +53,6 @@
     <div id="floating-quote"></div>
 
     </div>
-    <script src="webgazer.js"></script>
-    <script src="eye-tracking.js?v=2"></script>
     <script src="script.js?v=2"></script>
     <script type="module" src="decals.js?v=3"></script>
     <script type="module" src="robot.js?v=3"></script>
