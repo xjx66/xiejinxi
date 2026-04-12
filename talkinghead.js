@@ -333,8 +333,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 cameraDistance: 1.5,
                 lightAmbientIntensity: 3,
                 lightDirectIntensity: 5,
-                cameraRotateEnable: true,
-                cameraZoomEnable: true,
+                cameraRotateEnable: false, // 禁用内部相机旋转（orbit），避免事件被劫持阻断
+                cameraZoomEnable: false,   // 禁用缩放
                 mixerGainSpeech: 3
             });
             heads.push(h);
