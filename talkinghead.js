@@ -49,8 +49,9 @@ window.processActions = (text) => {
     
     // 确保 head 可用
     if (!head) {
-        console.warn("⚠️ Head not initialized in processActions");
-        return text;
+        console.warn("⚠️ Head not initialized in processActions (maybe canvas mode)");
+        // 仍然需要把动作标签过滤掉，防止 TTS 念出来
+        return text.replace(/\[.*?\]/g, '').replace(/\s+/g, ' ').trim();
     }
     
     // 机器人状态检查
@@ -273,28 +274,63 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         if (nodeLoading) nodeLoading.style.display = 'none';
 
         const models = [
-            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
             { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of Jinxi (Big Brother). How can I help you?" Always maintain this identity.' },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with Jinxi(Big Brother), who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
+            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
+            { type: 'canvas', id: 'decals-container', name: 'Jinxi', status: '在职', voice: 'am_michael', personality: 'You are Jinxi, an intern of bytedance. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am jinxi an intern of bytedance, bot one and bot two\'s partner" Always maintain this identity.' },
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of Jinxi. How can I help you?" Always maintain this identity.' },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with Jinxi, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
+            { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you!" Always maintain this identity and occasionally make cute robotic sounds.' },
             { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
         ];
 
         let heads = [];
-        let activeIndex = 2; // 默认选中中间的 brunette 模型
+        let activeIndex = 3; // 默认选中中间的 brunette 模型 (原本是2，加了1个所以变成3)
         const itemSpacing = 250; // 平面平铺的水平间距
 
         const updateCarousel = () => {
+            const N = models.length;
             const items = turntable.querySelectorAll('.carousel-item');
             items.forEach((item, j) => {
-                const offset = j - activeIndex;
+                let offset = j - activeIndex;
+                
+                // 将线性偏移转换为环形循环偏移 (首尾相连)
+                if (offset > Math.floor(N / 2)) {
+                    offset -= N;
+                } else if (offset < -Math.floor(N / 2)) {
+                    offset += N;
+                }
+
+                const distance = Math.abs(offset);
                 const tx = offset * itemSpacing;
                 // 这里是我们需要的终极暴力缩放！直接把整个 DOM 容器缩小到 0.85！
                 const scale = 0.85; 
-                const zIndex = offset === 0 ? 10 : 5 - Math.abs(offset);
+                const zIndex = offset === 0 ? 10 : 5 - distance;
                 
-                item.style.transform = `translateX(${tx}px) scale(${scale})`;
+                // 动态计算亮度：主模型 1.0(100%)，距离1的为 0.8(80%)，距离>=2的为 0.3(30%)
+                let brightness = 1.0;
+                if (distance === 1) {
+                    brightness = 0.8;
+                } else if (distance >= 2) {
+                    brightness = 0.3;
+                }
+                
+                // 处理无缝循环的视觉跳变：如果某一项的移动距离跨度很大，说明它是绕到了另一端
+                const oldTx = item.dataset.tx ? parseFloat(item.dataset.tx) : tx;
+                if (Math.abs(tx - oldTx) > itemSpacing * 1.5) {
+                    item.style.transition = 'none'; // 瞬间闪现到另一侧，不播放飞越屏幕的动画
+                } else {
+                    item.style.transition = ''; // 恢复 CSS 中的平滑过渡效果
+                }
+                item.dataset.tx = tx;
+                
+                let ty = 0;
+                if (models[j].name === '4号') {
+                    ty = 15; // 使用 CSS transform 把整个 4号 容器(连同标签和模型)往下平移 15 像素
+                }
+                
+                item.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
                 item.style.zIndex = zIndex;
+                item.style.filter = `brightness(${brightness})`;
                 
                 if (offset === 0) {
                     item.classList.add('active');
@@ -312,17 +348,28 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             activeIndex = newIndex;
             updateCarousel();
 
+            // 如果从机器人切走，强制重置其动画状态为 Idle
+            if (robotState.isSpinning) {
+                robotState.isSpinning = false;
+            }
+
             head = heads[activeIndex];
             const m = models[activeIndex];
             window.robotState.currentModelUrl = m.url;
             
-            heads.forEach((h, idx) => {
-                h.opt.freeze = (idx !== activeIndex);
-            });
-            
-            if (m.preserve && m.url.includes('robot_dreams.glb')) {
+            if (m.preserve && m.url && m.url.includes('robot_dreams.glb')) {
                 robotState.isWaving = true;
                 setTimeout(() => robotState.isWaving = false, 3000);
+            } else if (m.name === '大黄') {
+                // 如果是大黄机器人 (Canvas)，触发其暴露出来的挥手动作
+                if (window.playRobotEmote) {
+                    window.playRobotEmote('Wave');
+                }
+            } else {
+                // 非机器人模型，使用内置的打招呼动作
+                if (head && head.playGesture) {
+                    head.playGesture('handup', 2, false, 500);
+                }
             }
             
             // 根据状态控制聊天输入框的显示与隐藏，并更新提示词
@@ -358,6 +405,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         // 记录鼠标按下的初始位置和时间
         turntable.addEventListener('pointerdown', (e) => {
+            if (e.button === 2) return; // 忽略右键点击，留给画板涂鸦
             pointerDownX = e.clientX;
             pointerDownY = e.clientY;
             pointerDownTime = Date.now();
@@ -366,6 +414,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         // 在鼠标抬起时，判断是“单次点击”还是“拖拽旋转”
         turntable.addEventListener('pointerup', (e) => {
+            if (e.button === 2) return; // 忽略右键点击，留给画板涂鸦
+            
             // 如果点击的是输入框或按钮等控件，直接放行
             if (e.target.closest('input') || e.target.closest('button')) {
                 return;
@@ -393,6 +443,36 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             // 如果是拖拽（距离大）或长按（时间长），则什么也不做，让底层 Canvas 去处理旋转
         }, true);
 
+        // 5秒无操作自动向左轮换 (模型整体向左平移，即选中右侧的下一个模型 activeIndex + 1)
+        let autoRotateTimer = null;
+        // 把 reset 函数也挂载到 window，方便我们在输入框操作时调用
+        window.resetAutoRotateTimer = () => {
+            if (autoRotateTimer) clearTimeout(autoRotateTimer);
+            autoRotateTimer = setTimeout(() => {
+                // 如果有人在说话（无论是 3D 模型还是 Robot/Canvas），或者正在请求大模型(isLoading)
+                // 或者是对话框（输入框）处于激活/聚焦状态，就不自动轮播
+                const isLoading = document.getElementById('talkinghead-loading').style.display !== 'none';
+                const inputText = document.getElementById('talkinghead-text');
+                const isInputFocused = inputText && document.activeElement === inputText;
+
+                if (window.isSomeoneSpeaking || isLoading || isInputFocused) {
+                    window.resetAutoRotateTimer(); // 稍后再试
+                    return;
+                }
+                switchModel(activeIndex + 1);
+                window.resetAutoRotateTimer(); // 继续下一次循环
+            }, 5000);
+        };
+
+        // 监听用户的各种交互操作来打断/重置计时器
+        window.addEventListener('pointermove', window.resetAutoRotateTimer);
+        window.addEventListener('pointerdown', window.resetAutoRotateTimer);
+        window.addEventListener('keydown', window.resetAutoRotateTimer);
+        window.addEventListener('wheel', window.resetAutoRotateTimer);
+
+        // 初始化时启动计时器
+        window.resetAutoRotateTimer();
+
         // 创建各个头像容器
         for (let i = 0; i < models.length; i++) {
             const m = models[i];
@@ -405,18 +485,65 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             const tag = document.createElement('div');
             tag.className = 'avatar-tag';
             const statusClass = m.status === '在职' ? 'active-status' : 'inactive-status';
-            tag.innerHTML = `<span class="avatar-name">${m.name}</span><span class="avatar-status ${statusClass}">${m.status}</span>`;
+            tag.innerHTML = `
+                <div class="active-indicator">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 5l6 6 6-6" />
+                        <path d="M6 13l6 6 6-6" />
+                    </svg>
+                </div>
+                <span class="avatar-name">${m.name}</span>
+                <span class="avatar-status ${statusClass}">${m.status}</span>
+            `;
             
             // 手动调整特定模型标签的固定位置 (默认是 top: 40px)
             if (m.name === '博特兔') {
                 tag.style.top = '250px'; // 往下移动 200 像素，再往下移动 40 像素，所以是 250px (以210为基础往下40)
             } else if (m.name === '3号' || m.name === '4号') {
-                tag.style.top = '10px';  // 之前是0px（即上移40px），现在往下移动 10 像素，所以是 10px
+                tag.style.top = '10px';  // 恢复为原本的 10px，因为 4号整体容器被 CSS 平移了，所以它的标签会自动跟着下移 15px
             } else if (m.name === '博特万') {
                 tag.style.top = '50px';  // 默认是 40px，往下移动 10 像素，所以是 50px
+            } else if (m.name === 'Jinxi') {
+                tag.style.top = '40px'; // 原本是 70px，模型往上移动了 30px，标签也要跟着往上移动 30px，所以是 40px
+            } else if (m.name === '大黄') {
+                tag.style.top = '290px'; // 原本是 320px，标签需要再往上移动 30 像素，所以是 290px
             }
             
             item.appendChild(tag);
+
+            if (m.type === 'canvas') {
+                const canvasContainer = document.getElementById(m.id);
+                if (canvasContainer) {
+                    // 隐藏原有的 section 边框防止布局冲突
+                    const section = canvasContainer.closest('section');
+                    if (section) {
+                        section.style.display = 'none';
+                    }
+                    
+                    // 将 canvas 容器移入到 carousel-item 中
+                    item.appendChild(canvasContainer);
+                    
+                    canvasContainer.style.position = 'absolute';
+                    canvasContainer.style.left = '50%';
+                    canvasContainer.style.width = '1196px';
+                    
+                    if (m.id === 'decals-container') {
+                        // Jinxi 涂鸦墙的特殊定位
+                        // 往上移动 30 像素，所以 top 从 calc(50% - 180px) 改为 calc(50% - 210px)
+                        canvasContainer.style.top = 'calc(50% - 210px)';
+                        canvasContainer.style.transform = 'translate(-50%, -50%) scale(0.3)';
+                        canvasContainer.style.height = '900px';
+                    } else if (m.id === 'robot-container') {
+                        // 机器人的特殊定位
+                        // 往下移动 138 像素 (130 + 8)，所以 top 改为 calc(50% + 138px)
+                        canvasContainer.style.top = 'calc(50% + 138px)';
+                        canvasContainer.style.transform = 'translate(-50%, -50%) scale(0.8)';
+                        canvasContainer.style.height = '600px';
+                    }
+                }
+                heads.push(null);
+                continue;
+            }
 
             const h = new TalkingHead(item, {
                 ttsEndpoint: "https://api.elevenlabs.io/v1/text-to-speech/", 
@@ -470,7 +597,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
             // 每帧更新逻辑
             h.opt.update = (dt) => {
-                if (h !== head) return; // 只有当前激活的虚拟人才处理全局动画状态
+                // 如果不是当前激活的模型，且不是拥有专属动画的 Robot 模型，则不执行这部分逻辑
+                if (h !== head && !(h.avatar && h.avatar.preserveModelPose)) return; 
 
                 if (h.avatar && h.avatar.root && window.robotState.yOffset !== undefined) {
                     h.avatar.root.position.y = window.robotState.yOffset;
@@ -491,7 +619,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         if (headBone) {
                             // 说话时：头部 360 度持续旋转 (根据时间 t 线性增加角度)
                             // t * 5 表示旋转速度，你可以调整这个 5 来控制转得快还是慢
-                            headBone.rotation.y = t * 5; 
+                            headBone.rotation.y = t * 10; 
                             headBone.rotation.x = 0;
                             headBone.rotation.z = 0;
                         }
@@ -628,6 +756,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             // nodeLoading.textContent = "Loading Avatars...";
 
             const loadPromises = models.map(async (m, i) => {
+                if (m.type === 'canvas') return Promise.resolve(); // 不用加载 3D 模型
+
                 const h = heads[i];
                 let modelUrl = './avatars/' + m.url;
 
@@ -652,10 +782,17 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     h.opt.avatarIgnoreCamera = true;
                     h.opt.disableBalance = true;
                     h.opt.freeze = false;
+                }
 
-                    if (m.url.includes('robot_dreams.glb') && i === activeIndex) {
+                // 初始化时，如果当前模型是激活状态，触发一次打招呼
+                if (i === activeIndex) {
+                    if (m.url.includes('robot_dreams.glb')) {
                         robotState.isWaving = true;
                         setTimeout(() => robotState.isWaving = false, 3000);
+                    } else {
+                        if (h.playGesture) {
+                            h.playGesture('handup', 2, false, 500);
+                        }
                     }
                 }
                 
@@ -677,14 +814,6 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         h.cameraTarget.y += 0.117;
                         h.camera.updateProjectionMatrix();
                     }
-                }
-
-                // 核心优化：加载完成后，如果不是当前激活的，限制更新频率而不是完全停止
-                if (i !== activeIndex) {
-                    // 延迟 1 秒冻结，确保 WebGL 完成了首帧的渲染和材质编译，否则模型会是不可见的
-                    setTimeout(() => {
-                        h.opt.freeze = true; // 冻结骨骼更新计算，但保持模型可见
-                    }, 1000);
                 }
             });
 
@@ -793,9 +922,13 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
             };
 
-            nodeSpeak.addEventListener('click', window.handleSpeak);
+            nodeSpeak.addEventListener('click', () => {
+                if (window.resetAutoRotateTimer) window.resetAutoRotateTimer();
+                window.handleSpeak();
+            });
 
             nodeText.addEventListener('keypress', function(e) {
+                if (window.resetAutoRotateTimer) window.resetAutoRotateTimer();
                 if (e.key === 'Enter') {
                     window.handleSpeak();
                 }
@@ -817,6 +950,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             // 简单的音频播放队列
             window.robotAudioQueue = [];
             window.isRobotPlaying = false;
+            window.speakingCount = 0; // 使用计数器来精确控制全局说话状态
+            window.isSomeoneSpeaking = false;
 
             const playNextRobotAudio = (audioCtx) => {
                 if (window.robotAudioQueue.length === 0) {
@@ -826,6 +961,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
 
                 window.isRobotPlaying = true;
+                window.speakingCount++;
+                window.isSomeoneSpeaking = window.speakingCount > 0;
+                
                 const buffer = window.robotAudioQueue.shift();
 
                 const source = audioCtx.createBufferSource();
@@ -835,15 +973,19 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
                 // console.log("🤖 Robot playing audio chunk...");
                 
-                // 触发旋转 (如果还没转)
-                if (!window.robotState.isSpinning) {
-                    window.robotState.isSpinning = true;
-                    window.robotState.spinStartTime = Date.now();
+                // 触发旋转 (如果还没转，并且当前激活的模型确实是机器人)
+                if (head && head.avatar && head.avatar.preserveModelPose) {
+                    if (!window.robotState.isSpinning) {
+                        window.robotState.isSpinning = true;
+                        window.robotState.spinStartTime = Date.now();
+                    }
                 }
 
                 source.onended = () => {
                     // console.log("🤖 Robot audio chunk ended");
                     window.currentRobotAudioSource = null;
+                    window.speakingCount--;
+                    window.isSomeoneSpeaking = window.speakingCount > 0;
                     // 播放下一段
                     playNextRobotAudio(audioCtx);
                 };
@@ -851,15 +993,17 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 source.start(0);
             };
 
+            const fallbackAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
             headtts.onmessage = async (message) => {
                 if (message.type === "audio") {
                     try {
-                        // 🤖 Robot Isolation: 机器人专用处理逻辑
-                        if (head.avatar && head.avatar.preserveModelPose) {
+                        // 🤖 Robot/Canvas Isolation: 机器人或 Canvas(无模型) 专用处理逻辑
+                        if (!head || (head.avatar && head.avatar.preserveModelPose)) {
                             const messageData = message.data;
                             
                             // 定义 audioCtx
-                            const audioCtx = head.audioCtx;
+                            const audioCtx = (head && head.audioCtx) ? head.audioCtx : fallbackAudioCtx;
                             if (!audioCtx) return;
                             
                             if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -894,14 +1038,20 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         }
 
                         // 播放音频并同步口型
-                        // speakAudio(audioBuffer, options, onEnd)
-                        // options 里的 text 字段对于基于文本的口型同步是可选的，但对于基于音频分析的口型同步是必须的
-                        head.speakAudio(message.data, { 
-                            audio: message.data, 
-                            // 传入文本有助于某些引擎做更精准的口型匹配，虽然 TalkingHead 主要靠音频分析
-                            // 但如果 lipsyncModules 里配置了基于文本的模块，这个很有用
-                            text: message.text || "something" 
-                        });
+                        window.speakingCount++;
+                        window.isSomeoneSpeaking = window.speakingCount > 0;
+                        
+                        // speakAudio 返回的是 Promise，我们需要使用 await 来等待它真正播放完毕
+                        try {
+                            await head.speakAudio(message.data, { 
+                                audio: message.data, 
+                                // 传入文本有助于某些引擎做更精准的口型匹配
+                                text: message.text || "something" 
+                            });
+                        } finally {
+                            window.speakingCount--;
+                            window.isSomeoneSpeaking = window.speakingCount > 0;
+                        }
                     } catch (error) {
                         console.error(error);
                     }

@@ -44,7 +44,11 @@ function init() {
     scene = new THREE.Scene();
     
     camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
-        camera.position.z = 100;
+    // 增加高度到 900px (1.5倍) 后，模型会因为视角等比放大
+    // 为了保持模型实际显示的像素大小不变，将相机的距离 Z 也拉远 1.5 倍 (100 -> 150)
+    camera.position.z = 150;
+    // 为了补偿高度增加导致中心点下移，将相机的目标点稍微往下移动一点，使得模型在视觉上保持原来的高度位置
+    camera.position.y = 0;
 
     // Custom zoom: Command + Wheel
     renderer.domElement.addEventListener('wheel', (e) => {
@@ -55,8 +59,15 @@ function init() {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.minDistance = 50;
-    controls.maxDistance = 200;
+    controls.maxDistance = 300; // 适配更远的相机距离
     controls.enableDamping = true;
+    controls.enablePan = false; // 禁用右键平移，防止与右键涂鸦冲突
+    controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: null // 彻底释放右键，不触发 OrbitControls
+    };
+    controls.target.set(0, 0, 0); // 恢复正常的旋转中心点，避免旋转时模型发生弧线位移
 
     const dirLight1 = new THREE.DirectionalLight(0xffddcc, 1);
     dirLight1.position.set(1, 0.75, 0.5);
@@ -100,32 +111,75 @@ function init() {
         moved = true;
     });
 
+    // 禁用右键菜单
+    container.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+    });
+
     // Handle touch/click events
-    container.addEventListener('pointerdown', function() {
+    container.addEventListener('pointerdown', function(event) {
         moved = false;
     });
 
     container.addEventListener('pointerup', function(event) {
-        if (moved === false) {
+        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
+        const carouselItem = container.closest('.carousel-item');
+        if (carouselItem && !carouselItem.classList.contains('active')) return;
+
+        // 只有右键 (button === 2) 才允许涂鸦
+        if (moved === false && event.button === 2) {
             checkIntersection(event.clientX, event.clientY);
             if (intersection.intersects) shoot();
         }
     });
 
-    container.addEventListener('pointermove', onPointerMove);
+    // 创建右键提示的 Tooltip
+    const tooltip = document.createElement('div');
+    tooltip.style.position = 'fixed';
+    tooltip.style.pointerEvents = 'none'; // 防止阻挡鼠标事件
+    tooltip.style.zIndex = '9999';
+    tooltip.style.display = 'none';
+    
+    // 使用 CSS 中的动画类名构建内部 HTML
+    tooltip.innerHTML = `
+        <div class="mouse-click-anim">
+            <div class="mouse-icon">
+                <div class="mouse-right-btn"></div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(tooltip);
 
-    function onPointerMove(event) {
+    container.addEventListener('pointermove', function(event) {
         if (event.isPrimary) {
             checkIntersection(event.clientX, event.clientY);
         }
-    }
+        
+        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
+        const carouselItem = container.closest('.carousel-item');
+        if (carouselItem && !carouselItem.classList.contains('active')) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
+        // 更新 tooltip 位置
+        tooltip.style.display = 'block';
+        tooltip.style.left = (event.clientX + 15) + 'px';
+        tooltip.style.top = (event.clientY + 15) + 'px';
+    });
+
+    container.addEventListener('pointerleave', function() {
+        tooltip.style.display = 'none';
+    });
 
     function checkIntersection(x, y) {
         if (mesh === undefined) return;
 
         const rect = container.getBoundingClientRect();
-        mouse.x = ((x - rect.left) / container.clientWidth) * 2 - 1;
-        mouse.y = -((y - rect.top) / container.clientHeight) * 2 + 1;
+        // 使用 rect.width 和 rect.height 替代 clientWidth，以修复由于 CSS scale() 导致的射线检测坐标偏移问题
+        mouse.x = ((x - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((y - rect.top) / rect.height) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
         raycaster.intersectObject(mesh, false, intersects);

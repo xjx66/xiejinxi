@@ -17,7 +17,9 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     font-family: 'Inter', sans-serif;
-    overflow-x: hidden;
+    overflow: hidden; /* 完全移除页面的上下和左右滚动 */
+    height: 100vh;
+    width: 100vw;
     transition: background-color 0.3s, color 0.3s;
 }
 
@@ -496,6 +498,35 @@ html {
     text-shadow: 0 1px 4px rgba(0,0,0,0.8); /* 简单的文字阴影保证在复杂背景下也能看清 */
 }
 
+/* Active Indicator (Game-style Arrow) */
+.active-indicator {
+    display: none; /* 默认隐藏，只有 active 状态下显示 */
+    position: absolute;
+    top: -24px; /* 悬浮在名字上方，不占用正常的文档流高度 */
+    width: 20px;
+    height: 20px;
+    color: #fff;
+    animation: float-arrow 1.5s ease-in-out infinite;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.carousel-item.active .active-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+[data-theme="light"] .active-indicator {
+    color: #333; /* 白天模式为深灰色 */
+    filter: none; /* 白天模式去阴影 */
+}
+
+@keyframes float-arrow {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+    100% { transform: translateY(0); }
+}
+
 [data-theme="light"] .avatar-tag {
     color: #000;
     text-shadow: none; /* 白天模式去掉文字阴影 */
@@ -571,4 +602,64 @@ html {
 
 [data-theme="light"] #talkinghead-loading {
     color: #333 !important;
+}
+
+/* 右键点击动画提示 */
+.mouse-click-anim {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.mouse-icon {
+    width: 16px;
+    height: 24px;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    position: relative;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.mouse-right-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 5px;
+    height: 8px;
+    background: #ccc;
+    border-radius: 2px;
+    animation: right-click 1.5s infinite ease-in-out;
+}
+
+.mouse-click-text {
+    font-size: 10px;
+    font-weight: bold;
+    color: #ccc;
+    letter-spacing: 0.5px;
+}
+
+[data-theme="light"] .mouse-icon {
+    border-color: #333;
+    background: rgba(255, 255, 255, 0.8);
+}
+[data-theme="light"] .mouse-right-btn {
+    background: #333;
+}
+[data-theme="light"] .mouse-click-text {
+    color: #333;
+}
+
+@keyframes right-click {
+    0%, 100% { background: transparent; }
+    50% { background: #fff; box-shadow: 0 0 4px rgba(255,255,255,0.8); }
+}
+
+[data-theme="light"] .mouse-right-btn {
+    animation: right-click-light 1.5s infinite ease-in-out;
+}
+
+@keyframes right-click-light {
+    0%, 100% { background: transparent; }
+    50% { background: #333; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
 }

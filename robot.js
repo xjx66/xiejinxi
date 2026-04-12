@@ -129,6 +129,11 @@ function init() {
     controls = new OrbitControls( camera, renderer.domElement );
     controls.target.set( 0, 1.5, 0 );
     controls.enablePan = false;
+    controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: null // 释放右键
+    };
     controls.update();
 
     window.addEventListener( 'resize', onWindowResize );
@@ -136,34 +141,81 @@ function init() {
     // Mouse interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    
-    container.addEventListener('click', (event) => {
-        // Calculate mouse position in normalized device coordinates
-        // (-1 to +1) for both components
-        const rect = container.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
-        
-        raycaster.setFromCamera(mouse, camera);
-        
-        if (model) {
-            const intersects = raycaster.intersectObjects(model.children, true);
+    let moved = false;
+
+    controls.addEventListener('change', function() {
+        moved = true;
+    });
+
+    container.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+    });
+
+    container.addEventListener('pointerdown', function(event) {
+        moved = false;
+    });
+
+    container.addEventListener('pointerup', (event) => {
+        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
+        const carouselItem = container.closest('.carousel-item');
+        if (carouselItem && !carouselItem.classList.contains('active')) return;
+
+        if (moved === false && event.button === 2) {
+            const rect = container.getBoundingClientRect();
+            // 使用 rect.width/height 防止 css scale 导致计算错误
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
-            if (intersects.length > 0) {
-                // Randomly trigger an emote from the emotes list
-                const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-                playEmote(randomEmote);
+            raycaster.setFromCamera(mouse, camera);
+            
+            if (model) {
+                const intersects = raycaster.intersectObjects(model.children, true);
                 
-                // Keep focus on container/window to receive key events if needed
-                // But for window 'keydown', focus shouldn't be an issue unless inputs steal it
+                if (intersects.length > 0) {
+                    // Randomly trigger an emote from the emotes list
+                    const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
+                    playEmote(randomEmote);
+                }
             }
         }
     });
 
-    // Make sure the input fields don't swallow the keys if we want global control
-    // Or we accept that typing in input field won't trigger robot actions.
-    // The issue might be focus or event bubbling if not working.
+    // 创建右键提示的 Tooltip
+    const tooltip = document.createElement('div');
+    tooltip.style.position = 'fixed';
+    tooltip.style.pointerEvents = 'none';
+    tooltip.style.zIndex = '9999';
+    tooltip.style.display = 'none';
+    tooltip.innerHTML = `
+        <div class="mouse-click-anim">
+            <div class="mouse-icon">
+                <div class="mouse-right-btn"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(tooltip);
+
+    container.addEventListener('pointermove', function(event) {
+        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
+        const carouselItem = container.closest('.carousel-item');
+        if (carouselItem && !carouselItem.classList.contains('active')) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
+        // 更新 tooltip 位置
+        tooltip.style.display = 'block';
+        tooltip.style.left = (event.clientX + 15) + 'px';
+        tooltip.style.top = (event.clientY + 15) + 'px';
+    });
+
+    container.addEventListener('pointerleave', function() {
+        tooltip.style.display = 'none';
+    });
 }
+
+// 暴露给全局，方便其他模块调用打招呼动作
+window.playRobotEmote = playEmote;
 
 function playEmote(emoteName) {
     const action = actions[emoteName];

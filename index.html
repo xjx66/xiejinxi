@@ -22,15 +22,15 @@
     <canvas id="particles"></canvas>
     
     <div id="offline-indicator"></div>
-    <div class="container" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 60px;">
+    <div class="container" style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; margin: 0; overflow: hidden;">
         
-        <section class="talkinghead-section" style="width: 100%; max-width: 960px; position: relative; margin-top: -70px; height: 800px; /* overflow: hidden; Removed to show models outside container */">
+        <section class="talkinghead-section" style="width: 100%; max-width: 960px; position: relative; height: 800px; /* overflow: hidden; Removed to show models outside container */">
             <div id="carousel-turntable" style="width: 100%; height: 100%; position: absolute; cursor: pointer;">
                 <!-- JS will inject model containers here -->
             </div>
             
             <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
-            <div id="talkinghead-input-container" style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10; transition: opacity 0.3s ease;">
+            <div id="talkinghead-input-container" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10; transition: opacity 0.3s ease;">
                 <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">
                 <button id="talkinghead-speak" style="display: none; padding: 12px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 16px; transition: all 0.3s;">说话</button>
             </div>
@@ -38,7 +38,7 @@
         </section>
 
         <section class="decals-section" style="width: 100%; max-width: 1200px;">
-            <div id="decals-container" style="width: 100%; height: 600px;"></div>
+            <div id="decals-container" style="width: 100%; height: 900px;"></div>
         </section>
 
         <section class="robot-section" style="width: 100%; max-width: 1200px;">
