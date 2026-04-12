@@ -277,7 +277,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         let heads = [];
         let activeIndex = 0;
-        const itemSpacing = 80; // 平面平铺的水平间距
+        const itemSpacing = 300; // 平面平铺的水平间距
 
         const updateCarousel = () => {
             const items = turntable.querySelectorAll('.carousel-item');
