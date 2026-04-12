@@ -168,7 +168,7 @@ const initGlobalBackground = () => {
             wallMat.emissive.setHex(0x000000);
             wallMat.emissiveIntensity = 0;
 
-            const whiteLine = 0xffffff;
+            const whiteLine = 0xaaaaaa; // 再稍微提亮一点，使用浅灰色，增强可见度
             floorGrid.material.color.setHex(whiteLine);
             ceilGrid.material.color.setHex(whiteLine);
             wallGrid.material.color.setHex(whiteLine);
@@ -536,6 +536,13 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
             activeIndex = newIndex;
             updateCarousel();
+
+            // 切换模型时，强制隐藏所有由于 CSS transform 移动导致没能触发 pointerleave 的鼠标提示
+            document.querySelectorAll('.mouse-click-anim').forEach(anim => {
+                if (anim.parentElement) {
+                    anim.parentElement.style.display = 'none';
+                }
+            });
 
             // 如果从机器人切走，强制重置其动画状态为 Idle
             if (robotState.isSpinning) {

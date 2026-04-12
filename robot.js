@@ -168,7 +168,7 @@ function init() {
     container.addEventListener('pointerup', (event) => {
         // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
         const carouselItem = container.closest('.carousel-item');
-        if (carouselItem && !carouselItem.classList.contains('active')) return;
+        if (!carouselItem || !carouselItem.classList.contains('active')) return;
 
         if (moved === false && event.button === 2) {
             const rect = container.getBoundingClientRect();
@@ -208,7 +208,7 @@ function init() {
     container.addEventListener('pointermove', function(event) {
         // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
         const carouselItem = container.closest('.carousel-item');
-        if (carouselItem && !carouselItem.classList.contains('active')) {
+        if (!carouselItem || !carouselItem.classList.contains('active')) {
             tooltip.style.display = 'none';
             return;
         }
@@ -221,6 +221,13 @@ function init() {
 
     container.addEventListener('pointerleave', function() {
         tooltip.style.display = 'none';
+    });
+
+    // 增加全局额外保险，防止鼠标移出太快导致 tooltip 卡在屏幕上
+    window.addEventListener('pointermove', function(event) {
+        if (!container.contains(event.target)) {
+            tooltip.style.display = 'none';
+        }
     });
 }
 
