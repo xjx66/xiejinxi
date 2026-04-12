@@ -466,7 +466,7 @@ html {
     cursor: pointer;
 }
 .carousel-item:not(.active) {
-    filter: brightness(0.2) drop-shadow(0 0 20px rgba(0,0,0,0.8));
+    filter: brightness(0.6) drop-shadow(0 0 10px rgba(0,0,0,0.5));
     pointer-events: auto; /* Ensure clicks register */
 }
 .carousel-item.active {

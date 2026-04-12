@@ -475,20 +475,32 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
             };
 
-            // 加载 Avatar
-            let modelUrl = './avatars/' + m.url;
-            h.showAvatar({
-                url: modelUrl,
-                body: m.body,
-                avatarMood: m.mood,
-                lipsyncLang: 'en',
-                preserveModelPose: m.preserve
-            }, (ev) => {
-                if (ev.lengthComputable && i === 0) { // 仅针对第一个模型显示加载进度
-                    let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
-                    nodeLoading.textContent = "Loading Avatar " + val + "%";
+        } // end for
+
+        // 为了优化性能，我们改用顺序加载（Sequential Loading）
+        const loadAllAvatars = async () => {
+            for (let i = 0; i < models.length; i++) {
+                const m = models[i];
+                const h = heads[i];
+                let modelUrl = './avatars/' + m.url;
+                
+                if (i === 0) {
+                    nodeLoading.style.display = 'block';
                 }
-            }).then(() => {
+
+                await h.showAvatar({
+                    url: modelUrl,
+                    body: m.body,
+                    avatarMood: m.mood,
+                    lipsyncLang: 'en',
+                    preserveModelPose: m.preserve
+                }, (ev) => {
+                    if (ev.lengthComputable && i === 0) { 
+                        let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
+                        nodeLoading.textContent = "Loading Avatar " + val + "%";
+                    }
+                });
+
                 // Robot 特殊设置
                 if (m.preserve) {
                     h.opt.avatarIdleHeadMove = false;
@@ -515,26 +527,18 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         }
                     }
                 }
-            });
 
-            // 点击转盘项目
-            item.addEventListener('click', () => {
-                if (activeIndex === i) return; // 已经是当前项
-
-                // 切换全局引用
-                activeIndex = i;
-                updateCarousel(); // 更新所有模型的平面位置和缩放
-
-                head = heads[activeIndex];
-                window.robotState.currentModelUrl = m.url;
-                
-                // 如果是特殊模型，且刚才没挥手，可以再触发一下挥手
-                if (m.preserve && m.url.includes('robot_dreams.glb')) {
-                    robotState.isWaving = true;
-                    setTimeout(() => robotState.isWaving = false, 3000);
+                // 核心优化：加载完成后，如果不是当前激活的，立即停止渲染循环以节省 GPU
+                if (i !== activeIndex) {
+                    h.stop();
+                } else {
+                    nodeLoading.style.display = 'none'; // 第一个加载完就隐藏 loading
                 }
-            });
-        } // end for
+            }
+        };
+
+        // 启动顺序加载
+        loadAllAvatars();
 
         updateCarousel(); // 初始化时排布好所有模型
 
