@@ -506,3 +506,50 @@ html {
 .carousel-item.active canvas {
     pointer-events: auto; /* Re-enable for the canvas so orbit controls work on the active one */
 }
+
+/* Avatar Tag Styles */
+.avatar-tag {
+    position: absolute;
+    top: 40px; /* 距离模型容器顶部 40px */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 6px 16px;
+    border-radius: 20px;
+    color: white;
+    font-size: 14px;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none; /* 让鼠标点击穿透 tag */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.avatar-name {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.avatar-status {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.avatar-status.active-status {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.4);
+}
+
+.avatar-status.inactive-status {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.4);
+}

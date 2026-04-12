@@ -267,11 +267,11 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         nodeLoading.textContent = "Loading Avatars...";
 
         const models = [
-            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false },
-            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false },
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true },
-            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false }
+            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: 'Avaturn', status: '在职' },
+            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: 'AvatarSDK', status: '已离职' },
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: 'Brunette', status: '在职' },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: 'Robot', status: '在职' },
+            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: 'MPFB', status: '已离职' }
         ];
 
         let heads = [];
@@ -336,6 +336,13 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             item.className = 'carousel-item';
             item.dataset.index = i;
             turntable.appendChild(item);
+
+            // 动态创建顶部的姓名和状态 Tag
+            const tag = document.createElement('div');
+            tag.className = 'avatar-tag';
+            const statusClass = m.status === '在职' ? 'active-status' : 'inactive-status';
+            tag.innerHTML = `<span class="avatar-name">${m.name}</span><span class="avatar-status ${statusClass}">${m.status}</span>`;
+            item.appendChild(tag);
 
             item.addEventListener('click', () => {
                 switchModel(i);
