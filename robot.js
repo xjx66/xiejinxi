@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 let renderer, scene, camera, mixer, controls;
 const clock = new THREE.Clock();
@@ -31,6 +32,15 @@ function init() {
     const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
     dirLight.position.set( 3, 10, 10 );
     scene.add( dirLight );
+
+    // 加载 HDRI 环境光
+    new RGBELoader()
+        .setPath('./')
+        .load('suburban_garden_4k.hdr', function (texture) {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            // scene.background = texture; // 设置为背景 (移除，让所有模型透出全局背景)
+            scene.environment = texture; // 给模型添加真实的光影反射
+        });
 
     const loader = new GLTFLoader();
     loader.load( 'models/gltf/RobotExpressive/RobotExpressive.glb', function ( gltf ) {

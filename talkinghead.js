@@ -21,6 +21,183 @@ function findBone(armature, namePart, side) {
 // ... existing code ...
 let head;
 let headtts;
+// -----------------------------------------------------------------------
+// 全局 HDRI 背景初始化
+// -----------------------------------------------------------------------
+const initGlobalBackground = () => {
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.id = 'global-hdri-bg';
+    bgCanvas.style.position = 'fixed';
+    bgCanvas.style.top = '0';
+    bgCanvas.style.left = '0';
+    bgCanvas.style.width = '100%';
+    bgCanvas.style.height = '100%';
+    bgCanvas.style.zIndex = '-2'; // 放置在粒子背景(-1)的后面
+    bgCanvas.style.pointerEvents = 'none';
+    document.body.prepend(bgCanvas);
+
+    const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: true, alpha: false });
+    bgRenderer.setSize(window.innerWidth, window.innerHeight);
+    bgRenderer.setPixelRatio(window.devicePixelRatio);
+    const bgScene = new THREE.Scene();
+    bgScene.background = new THREE.Color(0x050505); // 将背景改为深色，配合远处的阴影衰减
+    // 使用深色线性雾气，模拟光线在远处的自然衰减，产生深邃的阴影感
+    bgScene.fog = new THREE.Fog(0x050505, 80, 500); 
+
+    const bgCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 3000); // 增加相机视野深度
+    bgCamera.position.set(0, 8, 40); 
+    bgCamera.lookAt(0, 8, -300); // 调整相机朝向，使其看向深度300的墙面
+
+    window.bgTargetPositionX = 0;
+
+    // --- 纯白无限方格空间 (The Construct) 构造 ---
+    // 1. 发光的方格地面
+    const floorGeo = new THREE.PlaneGeometry(4000, 4000); // 深度加大到 4000，配合雾气实现前后无限延伸
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 }); // 稍微降低自发光，避免过于刺眼
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -5;
+    bgScene.add(floor);
+
+    // 地面网格骨架 (加大尺寸和分段以匹配 4000 深度)
+    const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
+    floorGrid.material.vertexColors = false; // 禁用顶点颜色，方便动态修改材质颜色
+    floorGrid.material.color.setHex(0x111111);
+    floorGrid.position.y = -4.9; 
+    floorGrid.scale.set(1, 1, 0.6); 
+    bgScene.add(floorGrid);
+
+    // 2. 发光的方格天花板
+    const ceilGeo = new THREE.PlaneGeometry(4000, 4000); 
+    const ceilMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 });
+    const ceil = new THREE.Mesh(ceilGeo, ceilMat);
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.y = 40; 
+    bgScene.add(ceil);
+
+    // 天花板网格骨架
+    const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
+    ceilGrid.material.vertexColors = false;
+    ceilGrid.material.color.setHex(0x111111);
+    ceilGrid.position.y = 39.9; 
+    ceilGrid.scale.set(1, 1, 0.6); 
+    bgScene.add(ceilGrid);
+
+    // 3. 尽头方格墙面 (截断于 300 单位)
+    const wallGeo = new THREE.PlaneGeometry(4000, 200); 
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 });
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+    wall.position.set(0, 17.5, -295); // 放置在 z=-295 (300附近)，正好是地面网格的一条线上
+    bgScene.add(wall);
+
+    // 墙面网格骨架
+    const wallGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
+    wallGrid.material.vertexColors = false;
+    wallGrid.material.color.setHex(0x111111);
+    wallGrid.rotation.x = Math.PI / 2;
+    wallGrid.position.set(0, 10, -294.9); // y=10 确保网格线正好与 y=-5(地面) 和 y=40(天花板) 完美衔接
+    wallGrid.scale.set(1, 1, 0.6); 
+    bgScene.add(wallGrid);
+
+    // 4. 灯光系统
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
+    bgScene.add(ambientLight);
+    
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    dirLight.position.set(0, 30, -100);
+    bgScene.add(dirLight);
+
+    // 启动背景渲染动画循环
+    const animateBg = () => {
+        requestAnimationFrame(animateBg);
+        // 平滑过渡背景相机的 X 轴平移
+        bgCamera.position.x += (window.bgTargetPositionX - bgCamera.position.x) * 0.08;
+
+        // 1. 让天、地、墙直接跟随相机 X 轴移动，所以它们相对相机永远静止且无限延伸
+        floor.position.x = bgCamera.position.x;
+        ceil.position.x = bgCamera.position.x;
+        wall.position.x = bgCamera.position.x;
+
+        // 2. 网格单格尺寸是 4000/160 = 25。将其吸附到 25 的整数倍
+        const gridOffsetX = Math.round(bgCamera.position.x / 25) * 25;
+        ceilGrid.position.x = gridOffsetX;
+        floorGrid.position.x = gridOffsetX;
+        wallGrid.position.x = gridOffsetX;
+
+        bgRenderer.render(bgScene, bgCamera);
+    };
+    animateBg();
+
+    // --- 主题切换监听逻辑 ---
+    const updateBackgroundTheme = () => {
+        const theme = document.body.getAttribute('data-theme') || 'dark';
+        
+        if (theme === 'light') {
+            // 白天模式：白色格子，黑色线
+            bgScene.background.setHex(0xffffff);
+            
+            floorMat.color.setHex(0xffffff);
+            floorMat.emissive.setHex(0xffffff);
+            floorMat.emissiveIntensity = 1.2;
+            
+            ceilMat.color.setHex(0xffffff);
+            ceilMat.emissive.setHex(0xffffff);
+            ceilMat.emissiveIntensity = 1.2;
+            
+            wallMat.color.setHex(0xffffff);
+            wallMat.emissive.setHex(0xffffff);
+            wallMat.emissiveIntensity = 1.2;
+
+            const blackLine = 0x111111;
+            floorGrid.material.color.setHex(blackLine);
+            ceilGrid.material.color.setHex(blackLine);
+            wallGrid.material.color.setHex(blackLine);
+        } else {
+            // 夜间模式：黑色格子，白色线
+            bgScene.background.setHex(0x020202);
+            
+            floorMat.color.setHex(0x050505);
+            floorMat.emissive.setHex(0x000000); // 关闭自发光
+            floorMat.emissiveIntensity = 0;
+            
+            ceilMat.color.setHex(0x050505);
+            ceilMat.emissive.setHex(0x000000);
+            ceilMat.emissiveIntensity = 0;
+            
+            wallMat.color.setHex(0x050505);
+            wallMat.emissive.setHex(0x000000);
+            wallMat.emissiveIntensity = 0;
+
+            const whiteLine = 0xffffff;
+            floorGrid.material.color.setHex(whiteLine);
+            ceilGrid.material.color.setHex(whiteLine);
+            wallGrid.material.color.setHex(whiteLine);
+        }
+    };
+
+    // 初始执行一次
+    updateBackgroundTheme();
+
+    // 监听 body 的 data-theme 属性变化
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.attributeName === 'data-theme') {
+                updateBackgroundTheme();
+            }
+        });
+    });
+    observer.observe(document.body, { attributes: true });
+
+    window.addEventListener('resize', () => {
+        bgCamera.aspect = window.innerWidth / window.innerHeight;
+        bgCamera.updateProjectionMatrix();
+        bgRenderer.setSize(window.innerWidth, window.innerHeight);
+        bgRenderer.render(bgScene, bgCamera);
+    });
+};
+
+initGlobalBackground();
+
 let conversationHistory = [];
 let isKneeling = false; // 追踪跪下状态
 // Robot 状态 (Global Scope)
@@ -326,6 +503,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 let ty = 0;
                 if (models[j].name === '4号') {
                     ty = 15; // 使用 CSS transform 把整个 4号 容器(连同标签和模型)往下平移 15 像素
+                } else if (models[j].name === '3号') {
+                    ty = 20; // 同样使用 CSS transform 把整个 3号 容器往下平移 20 像素
                 }
                 
                 item.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
@@ -341,9 +520,19 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         };
 
         const switchModel = (newIndex) => {
+            let diff = newIndex - activeIndex;
+            
             if (newIndex < 0) newIndex = models.length - 1;
             if (newIndex >= models.length) newIndex = 0;
             if (activeIndex === newIndex) return;
+
+            // 处理循环情况的旋转方向差值 (保持向近距离旋转)
+            if (diff > models.length / 2) diff -= models.length;
+            if (diff < -models.length / 2) diff += models.length;
+            
+            // 动态修改背景相机的 X 轴平移目标
+            // 每次切换一个身位，背景相机在 X 轴上平移 30 个单位，产生单点透视的视差滑动感
+            window.bgTargetPositionX += diff * 30;
 
             activeIndex = newIndex;
             updateCarousel();
@@ -500,7 +689,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             if (m.name === '博特兔') {
                 tag.style.top = '250px'; // 往下移动 200 像素，再往下移动 40 像素，所以是 250px (以210为基础往下40)
             } else if (m.name === '3号' || m.name === '4号') {
-                tag.style.top = '10px';  // 恢复为原本的 10px，因为 4号整体容器被 CSS 平移了，所以它的标签会自动跟着下移 15px
+                tag.style.top = '10px';  // 恢复为原本的 10px，因为整体容器被 CSS 平移了，所以它的标签会自动跟着模型下移
             } else if (m.name === '博特万') {
                 tag.style.top = '50px';  // 默认是 40px，往下移动 10 像素，所以是 50px
             } else if (m.name === 'Jinxi') {

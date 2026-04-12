@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
-const container = document.getElementById('decals-container');
+const container = document.getElementById( 'decals-container' );
 
 let renderer, scene, camera;
 let mesh;
@@ -76,6 +77,15 @@ function init() {
     const dirLight2 = new THREE.DirectionalLight(0xccccff, 1);
     dirLight2.position.set(-1, 0.75, -0.5);
     scene.add(dirLight2);
+
+    // 加载 HDRI 环境光
+    new RGBELoader()
+        .setPath('./')
+        .load('suburban_garden_4k.hdr', function (texture) {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            // scene.background = texture; // 设置为背景 (移除，让所有模型透出全局背景)
+            scene.environment = texture; // 给模型添加真实的光影反射
+        });
 
     const ambientLight = new THREE.AmbientLight(0x443333, 3);
     scene.add(ambientLight);
