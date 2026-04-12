@@ -319,34 +319,46 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             }
         };
 
-        // 使用事件捕获机制 (capture) 全局拦截点击，实现屏幕左右侧点击切换
+        let pointerDownX = 0;
+        let pointerDownY = 0;
+        let pointerDownTime = 0;
+
+        // 记录鼠标按下的初始位置和时间
         turntable.addEventListener('pointerdown', (e) => {
+            pointerDownX = e.clientX;
+            pointerDownY = e.clientY;
+            pointerDownTime = Date.now();
+            // 注意：这里不拦截 pointerdown，让事件正常传递给底层的 Canvas，以便支持长按拖拽旋转
+        }, true);
+
+        // 在鼠标抬起时，判断是“单次点击”还是“拖拽旋转”
+        turntable.addEventListener('pointerup', (e) => {
             // 如果点击的是输入框或按钮等控件，直接放行
             if (e.target.closest('input') || e.target.closest('button')) {
                 return;
             }
 
-            // 如果点击的是正中间的激活主模型，直接放行，这样就可以继续长按拖拽旋转
-            const activeItem = e.target.closest('.carousel-item.active');
-            if (activeItem) {
-                return;
+            const dx = e.clientX - pointerDownX;
+            const dy = e.clientY - pointerDownY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const timeElapsed = Date.now() - pointerDownTime;
+
+            // 区分单次点击和拖拽/长按：
+            // 如果鼠标移动距离小于 10 像素，并且按下的时间小于 500 毫秒，则认为是“点击”
+            if (distance < 10 && timeElapsed < 500) {
+                // 根据点击位置的 X 坐标，判断是在屏幕的左半边还是右半边
+                const rect = turntable.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const centerX = rect.width / 2;
+
+                if (clickX < centerX) {
+                    switchModel(activeIndex - 1); // 点左半屏，往左移
+                } else {
+                    switchModel(activeIndex + 1); // 点右半屏，往右移
+                }
             }
-
-            // 否则拦截事件，不让底层 Canvas 劫持
-            e.preventDefault();
-            e.stopPropagation();
-
-            // 根据点击位置的 X 坐标，判断是在屏幕的左半边还是右半边
-            const rect = turntable.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const centerX = rect.width / 2;
-
-            if (clickX < centerX) {
-                switchModel(activeIndex - 1); // 点左侧，往左移
-            } else {
-                switchModel(activeIndex + 1); // 点右侧，往右移
-            }
-        }, true); // true 表示在捕获阶段拦截
+            // 如果是拖拽（距离大）或长按（时间长），则什么也不做，让底层 Canvas 去处理旋转
+        }, true);
 
         // 创建各个头像容器
         for (let i = 0; i < models.length; i++) {
@@ -551,9 +563,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     preserveModelPose: m.preserve
                 });
 
-                // 将所有模型整体在 3D 空间缩小 10% (现在是累计缩小到 0.81)
+                // 将所有模型整体在 3D 空间再缩小 10% (现在是累计缩小到 0.73)
                 if (h.avatar && h.avatar.root) {
-                    h.avatar.root.scale.set(0.81, 0.81, 0.81);
+                    h.avatar.root.scale.set(0.73, 0.73, 0.73);
                 }
 
                 // Robot 特殊设置
