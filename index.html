@@ -25,13 +25,9 @@
     <div class="container" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 60px;">
         
         <section class="talkinghead-section" style="width: 100%; max-width: 960px; position: relative; margin-top: -70px; height: 800px; /* overflow: hidden; Removed to show models outside container */">
-            <div id="carousel-turntable" style="width: 100%; height: 100%; position: absolute;">
+            <div id="carousel-turntable" style="width: 100%; height: 100%; position: absolute; cursor: pointer;">
                 <!-- JS will inject model containers here -->
             </div>
-            
-            <!-- Add Navigation Arrows -->
-            <button id="carousel-prev" class="carousel-nav-btn prev-btn">&#10094;</button>
-            <button id="carousel-next" class="carousel-nav-btn next-btn">&#10095;</button>
             
             <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
             <div style="position: absolute; bottom: 0px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10;">

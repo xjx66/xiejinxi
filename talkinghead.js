@@ -319,15 +319,34 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             }
         };
 
-        const btnPrev = document.getElementById('carousel-prev');
-        const btnNext = document.getElementById('carousel-next');
+        // 使用事件捕获机制 (capture) 全局拦截点击，实现屏幕左右侧点击切换
+        turntable.addEventListener('pointerdown', (e) => {
+            // 如果点击的是输入框或按钮等控件，直接放行
+            if (e.target.closest('input') || e.target.closest('button')) {
+                return;
+            }
 
-        if (btnPrev) {
-            btnPrev.addEventListener('click', () => switchModel(activeIndex - 1));
-        }
-        if (btnNext) {
-            btnNext.addEventListener('click', () => switchModel(activeIndex + 1));
-        }
+            // 如果点击的是正中间的激活主模型，直接放行，这样就可以继续长按拖拽旋转
+            const activeItem = e.target.closest('.carousel-item.active');
+            if (activeItem) {
+                return;
+            }
+
+            // 否则拦截事件，不让底层 Canvas 劫持
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 根据点击位置的 X 坐标，判断是在屏幕的左半边还是右半边
+            const rect = turntable.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const centerX = rect.width / 2;
+
+            if (clickX < centerX) {
+                switchModel(activeIndex - 1); // 点左侧，往左移
+            } else {
+                switchModel(activeIndex + 1); // 点右侧，往右移
+            }
+        }, true); // true 表示在捕获阶段拦截
 
         // 创建各个头像容器
         for (let i = 0; i < models.length; i++) {
@@ -344,10 +363,6 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             tag.innerHTML = `<span class="avatar-name">${m.name}</span><span class="avatar-status ${statusClass}">${m.status}</span>`;
             item.appendChild(tag);
 
-            item.addEventListener('click', () => {
-                switchModel(i);
-            });
-
             const h = new TalkingHead(item, {
                 ttsEndpoint: "https://api.elevenlabs.io/v1/text-to-speech/", 
                 lipsyncModules: ["en"],
@@ -356,8 +371,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 cameraDistance: 1.5,
                 lightAmbientIntensity: 3,
                 lightDirectIntensity: 5,
-                cameraRotateEnable: false, // 禁用内部相机旋转（orbit），避免事件被劫持阻断
-                cameraZoomEnable: false,   // 禁用缩放
+                cameraRotateEnable: true, // 重新开启内部相机旋转
+                cameraZoomEnable: true,   // 重新开启缩放
                 mixerGainSpeech: 3
             });
             heads.push(h);
@@ -536,9 +551,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     preserveModelPose: m.preserve
                 });
 
-                // 将所有模型整体在 3D 空间缩小 10%
+                // 将所有模型整体在 3D 空间缩小 10% (现在是累计缩小到 0.81)
                 if (h.avatar && h.avatar.root) {
-                    h.avatar.root.scale.set(0.9, 0.9, 0.9);
+                    h.avatar.root.scale.set(0.81, 0.81, 0.81);
                 }
 
                 // Robot 特殊设置
@@ -552,6 +567,17 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     if (m.url.includes('robot_dreams.glb') && i === activeIndex) {
                         robotState.isWaving = true;
                         setTimeout(() => robotState.isWaving = false, 3000);
+                    }
+                }
+                
+                // 将 AVATARSDK 和 AVATURN 模型向下移动 30 像素 (通过调整相机 Y 轴和目标)
+                if (m.url.includes('avaturn.glb') || m.url.includes('avatarsdk.glb')) {
+                    if (h.camera && h.cameraTarget) {
+                        // 在 3D 中，要让模型向下移动，需要将摄像机向上移动
+                        // 原本默认的 camera.position.y 是 0.2，向上移动约 0.05 对应屏幕上大约 30px
+                        h.camera.position.y += 0.05; 
+                        h.cameraTarget.y += 0.05;
+                        h.camera.updateProjectionMatrix();
                     }
                 }
 
