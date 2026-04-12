@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             items.forEach((item, j) => {
                 const offset = j - activeIndex;
                 const tx = offset * itemSpacing;
-                const scale = offset === 0 ? 1 : 0.75; // 未选中的缩小一点
+                const scale = 1; // 所有人保持 1:1 的大小，不缩放，保持在同一条直线上
                 const zIndex = offset === 0 ? 10 : 5 - Math.abs(offset);
                 
                 item.style.transform = `translateX(${tx}px) scale(${scale})`;
@@ -497,16 +497,14 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         } // end for
 
-        // 为了优化性能，我们改用顺序加载（Sequential Loading）
+        // 改回并发加载所有模型
         const loadAllAvatars = async () => {
-            for (let i = 0; i < models.length; i++) {
-                const m = models[i];
+            nodeLoading.style.display = 'block';
+            nodeLoading.textContent = "Loading Avatars...";
+
+            const loadPromises = models.map(async (m, i) => {
                 const h = heads[i];
                 let modelUrl = './avatars/' + m.url;
-                
-                if (i === 0) {
-                    nodeLoading.style.display = 'block';
-                }
 
                 await h.showAvatar({
                     url: modelUrl,
@@ -514,11 +512,6 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     avatarMood: m.mood,
                     lipsyncLang: 'en',
                     preserveModelPose: m.preserve
-                }, (ev) => {
-                    if (ev.lengthComputable && i === 0) { 
-                        let val = Math.min(100, Math.round(ev.loaded / ev.total * 100));
-                        nodeLoading.textContent = "Loading Avatar " + val + "%";
-                    }
                 });
 
                 // Robot 特殊设置
@@ -537,11 +530,15 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     if (m.url.includes('elonmask_animations.glb')) {
                         if (h.camera && h.cameraTarget) {
                             if (h.avatar && h.avatar.root) {
-                                h.avatar.root.scale.set(0.35, 0.35, 0.35); 
+                                h.avatar.root.scale.set(0.315, 0.315, 0.315); // 缩小10% (0.35 * 0.9 = 0.315)
                             }
-                            h.camera.position.y = 0.5; 
+                            h.camera.position.y = 0.9; // 向上移动，值越大，人物显得越靠下，所以我们需要减小值？
+                            // 我们要让模型向上移动 400 像素，在 3D 空间中，我们需要将相机向下移动
+                            // 原来的 camera.position.y = 0.5，cameraTarget.y = 0.3
+                            // 减小 y 值会让相机往下看，模型在画面中会往上走
+                            h.camera.position.y = -0.5; // 相机向下移动
+                            h.cameraTarget.y = -0.7; // 目标也向下移动
                             h.camera.position.z = 1.5; 
-                            h.cameraTarget.y = 0.3; 
                             h.camera.fov = 45; 
                             h.camera.updateProjectionMatrix();
                         }
@@ -550,14 +547,18 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
                 // 核心优化：加载完成后，如果不是当前激活的，限制更新频率而不是完全停止
                 if (i !== activeIndex) {
-                    h.opt.freeze = true; // 冻结骨骼更新计算，但保持模型可见
-                } else {
-                    nodeLoading.style.display = 'none'; // 第一个加载完就隐藏 loading
+                    // 延迟 1 秒冻结，确保 WebGL 完成了首帧的渲染和材质编译，否则模型会是不可见的
+                    setTimeout(() => {
+                        h.opt.freeze = true; // 冻结骨骼更新计算，但保持模型可见
+                    }, 1000);
                 }
-            }
+            });
+
+            await Promise.all(loadPromises);
+            nodeLoading.style.display = 'none'; // 所有加载完就隐藏 loading
         };
 
-        // 启动顺序加载
+        // 启动并发加载
         loadAllAvatars();
 
         updateCarousel(); // 初始化时排布好所有模型
