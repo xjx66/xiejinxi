@@ -1,4 +1,11 @@
 {
+  "name": "uniunion",
+  "version": "1.0.0",
+  "description": "Uniunion TalkingHead Project",
+  "main": "proxy-server.js",
+  "scripts": {
+    "start": "node proxy-server.js"
+  },
   "dependencies": {
     "chokidar": "^5.0.0",
     "cors": "^2.8.5",
