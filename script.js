@@ -30,7 +30,7 @@ function setTheme(theme) {
     
     // Update toggle button icon if needed
     if (themeToggle) {
-        themeToggle.textContent = theme === 'light' ? '🌞' : '🌓';
+        themeToggle.textContent = theme === 'light' ? '🌘' : '🌖';
     }
 }
 
