@@ -536,6 +536,11 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     preserveModelPose: m.preserve
                 });
 
+                // 将所有模型整体在 3D 空间缩小 10%
+                if (h.avatar && h.avatar.root) {
+                    h.avatar.root.scale.set(0.9, 0.9, 0.9);
+                }
+
                 // Robot 特殊设置
                 if (m.preserve) {
                     h.opt.avatarIdleHeadMove = false;
@@ -557,13 +562,22 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     // 确保矩阵更新，以获得正确的 3D 位置
                     h.avatar.root.updateMatrixWorld(true);
                     
-                    // 计算 3D Bounding Box
-                    const box = new THREE.Box3().setFromObject(h.avatar.root);
-                    const center = new THREE.Vector3();
-                    box.getCenter(center);
-                    
-                    // 取模型的顶部中心点
-                    const topPoint = new THREE.Vector3(center.x, box.max.y, center.z);
+                    let topPoint = new THREE.Vector3();
+                    // 尝试获取头部骨骼
+                    const headBone = h.avatar.root.getObjectByName('Head') || 
+                                     h.avatar.root.getObjectByName('head') || 
+                                     h.avatar.root.getObjectByName('mixamorigHead');
+                                     
+                    if (headBone) {
+                        headBone.getWorldPosition(topPoint);
+                        topPoint.y += 0.25; // 3D 空间中在头顶上方再加一点点偏移，以适应头发/帽子
+                    } else {
+                        // 降级方案：计算 3D Bounding Box
+                        const box = new THREE.Box3().setFromObject(h.avatar.root);
+                        const center = new THREE.Vector3();
+                        box.getCenter(center);
+                        topPoint.set(center.x, box.max.y, center.z);
+                    }
                     
                     // 投影到摄像机的 2D 坐标系中（范围 [-1, 1]）
                     topPoint.project(h.camera);
