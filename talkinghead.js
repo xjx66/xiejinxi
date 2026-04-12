@@ -560,7 +560,10 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         // 启动并发加载
         loadAllAvatars();
 
-        updateCarousel(); // 初始化时排布好所有模型
+        // 延迟执行一次 updateCarousel，确保 DOM 已完全渲染并添加到页面中
+        setTimeout(() => {
+            updateCarousel(); // 初始化时排布好所有模型
+        }, 100);
 
         // 设置默认全局 head
         head = heads[activeIndex];
