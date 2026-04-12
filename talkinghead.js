@@ -283,7 +283,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             items.forEach((item, j) => {
                 const offset = j - activeIndex;
                 const tx = offset * itemSpacing;
-                const scale = 1; // 所有人保持 1:1 的大小，不缩放，保持在同一条直线上
+                // 这里是我们需要的终极暴力缩放！直接把整个 DOM 容器缩小到 0.73！
+                const scale = 0.73; 
                 const zIndex = offset === 0 ? 10 : 5 - Math.abs(offset);
                 
                 item.style.transform = `translateX(${tx}px) scale(${scale})`;
@@ -380,7 +381,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 lipsyncModules: ["en"],
                 cameraView: "full",
                 cameraY: 0.2,
-                cameraDistance: 1.5,
+                cameraDistance: 1.8, // 增加相机距离，从而在视觉上大幅缩小模型
                 lightAmbientIntensity: 3,
                 lightDirectIntensity: 5,
                 cameraRotateEnable: true, // 重新开启内部相机旋转
@@ -560,7 +561,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     body: m.body,
                     avatarMood: m.mood,
                     lipsyncLang: 'en',
-                    preserveModelPose: m.preserve
+                    preserveModelPose: m.preserve,
+                    cameraDistance: 2.2 // 进一步拉远相机，让模型明显变小
                 });
 
                 // 将所有模型整体在 3D 空间再缩小 10% (现在是累计缩小到 0.73)
