@@ -37,8 +37,8 @@ window.robotState = robotState; // Expose for debugging
 window.robotState = robotState;
 
 const VOLCENGINE_API_KEY = "c0cb2129-ec07-46f8-9cf0-6c69a8f0a79a";
-// 使用相对路径，避免 localhost/127.0.0.1 跨域或解析问题
-const PROXY_API_URL = "/api/proxy/api/coding/v3/chat/completions";
+// 直接调用火山引擎接口，支持在 GitHub Pages 等静态托管平台直接运行（无需本地代理服务器）
+const PROXY_API_URL = "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions";
 
 // -----------------------------------------------------------------------
 // 动作解析与执行逻辑 (Global Scope)
