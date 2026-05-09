@@ -122,6 +122,15 @@ function init() {
 
         animate();
 
+        // 通知外部系统 (talkinghead) 模型加载完毕
+        container.dataset.loaded = 'true';
+        container.dispatchEvent(new CustomEvent('model-loaded'));
+
+    }, function (xhr) {
+        if (xhr.lengthComputable) {
+            const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+            container.dispatchEvent(new CustomEvent('model-progress', { detail: percentComplete }));
+        }
     } );
 
     renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );

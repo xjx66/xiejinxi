@@ -105,6 +105,15 @@ function init() {
         scene.add(mesh);
         mesh.scale.set(8.33, 8.33, 8.33);
 
+        // 通知外部系统 (talkinghead) 模型加载完毕
+        container.dataset.loaded = 'true';
+        container.dispatchEvent(new CustomEvent('model-loaded'));
+
+    }, function (xhr) {
+        if (xhr.lengthComputable) {
+            const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+            container.dispatchEvent(new CustomEvent('model-progress', { detail: percentComplete }));
+        }
     });
 
     raycaster = new THREE.Raycaster();

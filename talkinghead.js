@@ -51,15 +51,36 @@ const initGlobalBackground = () => {
     window.bgTargetPositionX = 0;
 
     // --- 纯白无限方格空间 (The Construct) 构造 ---
-    // 1. 发光的方格地面
+    // [空间部位约定说明]: 
+    // 1. "地面" 或 "地板": 指下方 Y=-5 的大平面 (floor / floorGrid)
+    // 2. "天花板": 指上方 Y=40 的大平面 (ceil / ceilGrid)
+    // 3. "墙" 或 "墙面": 指远处 Z=-295 垂直的背景平面 (wall / wallGrid)
+
+    // 1. 地面/地板 (Floor)
     const floorGeo = new THREE.PlaneGeometry(4000, 4000); // 深度加大到 4000，配合雾气实现前后无限延伸
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 }); // 稍微降低自发光，避免过于刺眼
+    
+    // 加载地面材质贴图
+    const textureLoader = new THREE.TextureLoader();
+    const floorTexture = textureLoader.load('./ground-texture.jpg');
+    floorTexture.wrapS = THREE.RepeatWrapping;
+    floorTexture.wrapT = THREE.RepeatWrapping;
+    // 地面是 4000x4000 的正方形，为了让纹理比例合适，横向纵向各重复 40 次
+    floorTexture.repeat.set(40, 40);
+
+    const floorMat = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff, 
+        map: floorTexture, 
+        emissive: 0xffffff, 
+        emissiveMap: floorTexture, 
+        emissiveIntensity: 1.2,
+        roughness: 0.8
+    }); 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -5;
     bgScene.add(floor);
 
-    // 地面网格骨架 (加大尺寸和分段以匹配 4000 深度)
+    // 地面/地板 网格骨架
     const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
     floorGrid.material.vertexColors = false; // 禁用顶点颜色，方便动态修改材质颜色
     floorGrid.material.color.setHex(0x111111);
@@ -67,7 +88,7 @@ const initGlobalBackground = () => {
     floorGrid.scale.set(1, 1, 0.6); 
     bgScene.add(floorGrid);
 
-    // 2. 发光的方格天花板
+    // 2. 天花板 (Ceiling)
     const ceilGeo = new THREE.PlaneGeometry(4000, 4000); 
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 });
     const ceil = new THREE.Mesh(ceilGeo, ceilMat);
@@ -75,7 +96,7 @@ const initGlobalBackground = () => {
     ceil.position.y = 40; 
     bgScene.add(ceil);
 
-    // 天花板网格骨架
+    // 天花板 网格骨架
     const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
     ceilGrid.material.vertexColors = false;
     ceilGrid.material.color.setHex(0x111111);
@@ -83,21 +104,37 @@ const initGlobalBackground = () => {
     ceilGrid.scale.set(1, 1, 0.6); 
     bgScene.add(ceilGrid);
 
-    // 3. 尽头方格墙面 (截断于 300 单位)
+    // 3. 墙/墙面 (Wall)
     const wallGeo = new THREE.PlaneGeometry(4000, 200); 
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 });
+    
+    // 加载材质贴图 (复用上面定义的 textureLoader)
+    const wallTexture = textureLoader.load('./wall-texture.jpg'); // 请确保将图片保存为 wall-texture.jpg 并放在根目录
+    wallTexture.wrapS = THREE.RepeatWrapping;
+    wallTexture.wrapT = THREE.RepeatWrapping;
+    // 根据墙面的宽高比 (4000:200 = 20:1)，让贴图在水平方向重复 40 次，垂直方向重复 2 次，保证比例协调
+    wallTexture.repeat.set(40, 2);
+
+    const wallMat = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff, 
+        map: wallTexture, // 漫反射贴图
+        emissive: 0xffffff, 
+        emissiveMap: wallTexture, // 同样作为发光贴图，保证在白天模式依然亮堂但带有纹理
+        emissiveIntensity: 1.2,
+        roughness: 0.9 // 混凝土粗糙度
+    });
     const wall = new THREE.Mesh(wallGeo, wallMat);
     wall.position.set(0, 17.5, -295); // 放置在 z=-295 (300附近)，正好是地面网格的一条线上
     bgScene.add(wall);
 
-    // 墙面网格骨架
-    const wallGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
-    wallGrid.material.vertexColors = false;
-    wallGrid.material.color.setHex(0x111111);
-    wallGrid.rotation.x = Math.PI / 2;
-    wallGrid.position.set(0, 10, -294.9); // y=10 确保网格线正好与 y=-5(地面) 和 y=40(天花板) 完美衔接
-    wallGrid.scale.set(1, 1, 0.6); 
-    bgScene.add(wallGrid);
+    // 墙面网格骨架 (移除网格，让混凝土纹理更纯粹)
+    // 因为这面墙上已经有了贴图带来的分隔缝隙，再叠加上黑色的 GridHelper 会显得杂乱
+    // const wallGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
+    // wallGrid.material.vertexColors = false;
+    // wallGrid.material.color.setHex(0x111111);
+    // wallGrid.rotation.x = Math.PI / 2;
+    // wallGrid.position.set(0, 10, -294.9); 
+    // wallGrid.scale.set(1, 1, 0.6); 
+    // bgScene.add(wallGrid);
 
     // 4. 灯光系统
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
@@ -122,7 +159,15 @@ const initGlobalBackground = () => {
         const gridOffsetX = Math.round(bgCamera.position.x / 25) * 25;
         ceilGrid.position.x = gridOffsetX;
         floorGrid.position.x = gridOffsetX;
-        wallGrid.position.x = gridOffsetX;
+        // wallGrid.position.x = gridOffsetX; // 已经移除墙面网格
+
+        // 【关键】：让墙面的纹理随着相机的移动而产生滚动偏移
+        // 墙面的宽度是 4000，repeat 是 40，说明每一块水泥板的实际宽度是 100 单位
+        // 所以当相机移动 x 时，UV 的 offset x 应该是 相机x / 4000
+        wallTexture.offset.x = (bgCamera.position.x / 4000) * 40;
+        
+        // 同样让地面的纹理也随相机产生水平滚动
+        floorTexture.offset.x = (bgCamera.position.x / 4000) * 40;
 
         bgRenderer.render(bgScene, bgCamera);
     };
@@ -151,12 +196,12 @@ const initGlobalBackground = () => {
             const blackLine = 0x111111;
             floorGrid.material.color.setHex(blackLine);
             ceilGrid.material.color.setHex(blackLine);
-            wallGrid.material.color.setHex(blackLine);
+            // wallGrid.material.color.setHex(blackLine);
         } else {
             // 夜间模式：黑色格子，白色线
             bgScene.background.setHex(0x020202);
             
-            floorMat.color.setHex(0x050505);
+            floorMat.color.setHex(0x888888); // 地面和墙面一样，夜间调成中灰色以透出纹理
             floorMat.emissive.setHex(0x000000); // 关闭自发光
             floorMat.emissiveIntensity = 0;
             
@@ -164,14 +209,14 @@ const initGlobalBackground = () => {
             ceilMat.emissive.setHex(0x000000);
             ceilMat.emissiveIntensity = 0;
             
-            wallMat.color.setHex(0x050505);
+            wallMat.color.setHex(0x888888); // 夜间模式调暗底色，让纹理不至于完全黑死
             wallMat.emissive.setHex(0x000000);
             wallMat.emissiveIntensity = 0;
 
             const whiteLine = 0xaaaaaa; // 再稍微提亮一点，使用浅灰色，增强可见度
             floorGrid.material.color.setHex(whiteLine);
             ceilGrid.material.color.setHex(whiteLine);
-            wallGrid.material.color.setHex(whiteLine);
+            // wallGrid.material.color.setHex(whiteLine);
         }
     };
 
@@ -453,9 +498,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         const models = [
             { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
             { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
-            { type: 'canvas', id: 'decals-container', name: 'Jinxi', status: '在职', voice: 'am_michael', personality: 'You are Jinxi, an intern of bytedance. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am jinxi an intern of bytedance, bot one and bot two\'s partner" Always maintain this identity.' },
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of Jinxi. How can I help you?" Always maintain this identity.' },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with Jinxi, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
+            { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am jinxi an intern of bytedance, bot one and bot two\'s partner" Always maintain this identity.' },
+            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?" Always maintain this identity.' },
+            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
             { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you!" Always maintain this identity and occasionally make cute robotic sounds.' },
             { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
         ];
@@ -707,6 +752,21 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             
             item.appendChild(tag);
 
+            // 创建加载状态转圈动画及进度文本
+            const loaderContainer = document.createElement('div');
+            loaderContainer.className = 'model-loader-container';
+            
+            const loaderRing = document.createElement('div');
+            loaderRing.className = 'model-loader-ring';
+            
+            const loaderText = document.createElement('div');
+            loaderText.className = 'model-loader-text';
+            loaderText.innerText = '0%';
+            
+            loaderContainer.appendChild(loaderRing);
+            loaderContainer.appendChild(loaderText);
+            item.appendChild(loaderContainer);
+
             if (m.type === 'canvas') {
                 const canvasContainer = document.getElementById(m.id);
                 if (canvasContainer) {
@@ -735,6 +795,18 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                         canvasContainer.style.top = 'calc(50% + 138px)';
                         canvasContainer.style.transform = 'translate(-50%, -50%) scale(0.8)';
                         canvasContainer.style.height = '600px';
+                    }
+
+                    // 监听 canvas 模型内部派发的加载完成事件，隐藏加载圈
+                    if (canvasContainer.dataset.loaded === 'true') {
+                        loaderContainer.style.display = 'none';
+                    } else {
+                        canvasContainer.addEventListener('model-progress', (e) => {
+                            loaderText.innerText = e.detail + '%';
+                        });
+                        canvasContainer.addEventListener('model-loaded', () => {
+                            loaderContainer.style.display = 'none';
+                        });
                     }
                 }
                 heads.push(null);
@@ -957,6 +1029,18 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 const h = heads[i];
                 let modelUrl = './avatars/' + m.url;
 
+                // 模拟一个稳步上升的进度 (因为 TalkingHead 底层可能没有直接透出细粒度的 onProgress 回调)
+                let fakeProgress = 0;
+                const progressInterval = setInterval(() => {
+                    if (fakeProgress < 90) {
+                        fakeProgress += Math.floor(Math.random() * 10) + 1;
+                        if (fakeProgress > 90) fakeProgress = 90;
+                        const carouselItem = turntable.querySelectorAll('.carousel-item')[i];
+                        const loaderText = carouselItem.querySelector('.model-loader-text');
+                        if (loaderText) loaderText.innerText = fakeProgress + '%';
+                    }
+                }, 200);
+
                 await h.showAvatar({
                     url: modelUrl,
                     body: m.body,
@@ -964,7 +1048,27 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     lipsyncLang: 'en',
                     preserveModelPose: m.preserve,
                     cameraDistance: 2.2 // 进一步拉远相机，让模型明显变小
+                }, (ev) => {
+                    // 如果 showAvatar 抛出了真实的 progress 事件，则使用真实数据
+                    if (ev && ev.lengthComputable) {
+                        clearInterval(progressInterval);
+                        const percentComplete = Math.round((ev.loaded / ev.total) * 100);
+                        const carouselItem = turntable.querySelectorAll('.carousel-item')[i];
+                        const loaderText = carouselItem.querySelector('.model-loader-text');
+                        if (loaderText) loaderText.innerText = percentComplete + '%';
+                    }
                 });
+
+                clearInterval(progressInterval);
+
+                // 模型加载完成后，隐藏对应的加载圈
+                const carouselItem = turntable.querySelectorAll('.carousel-item')[i];
+                const loader = carouselItem.querySelector('.model-loader-container');
+                if (loader) {
+                    const text = loader.querySelector('.model-loader-text');
+                    if (text) text.innerText = '100%';
+                    setTimeout(() => { loader.style.display = 'none'; }, 200);
+                }
 
                 // 将所有模型整体在 3D 空间再缩小 10% (现在是累计缩小到 0.73)
                 if (h.avatar && h.avatar.root) {
