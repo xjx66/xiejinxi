@@ -258,8 +258,8 @@ window.robotState = robotState; // Expose for debugging
 // 暴露给 window 以便控制台调试
 window.robotState = robotState;
 
-const VOLCENGINE_API_KEY = "c0cb2129-ec07-46f8-9cf0-6c69a8f0a79a";
-// 使用相对路径，在本地走 proxy-server.js 代理，在线上（如 Vercel 部署时）走 Serverless Function 代理
+// 走代理：本地由 proxy-server.js 注入 Authorization；线上 Vercel 由 /api/proxy/[...path].js 注入。
+// 前端不再持有任何 API key。
 const PROXY_API_URL = "/api/proxy/api/coding/v3/chat/completions";
 
 // -----------------------------------------------------------------------
@@ -438,8 +438,8 @@ Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Ple
         const response = await fetch(PROXY_API_URL, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${VOLCENGINE_API_KEY}`
+                "Content-Type": "application/json"
+                // Authorization 由代理服务端注入，前端不携带 key
             },
             body: JSON.stringify({
                 model: "ark-code-latest",
@@ -498,7 +498,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         const models = [
             { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
             { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
-            { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am jinxi an intern of bytedance, bot one and bot two\'s partner" Always maintain this identity.' },
+            { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am X an intern, bot one and bot two\'s partner" Always maintain this identity.' },
             { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?" Always maintain this identity.' },
             { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
             { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you!" Always maintain this identity and occasionally make cute robotic sounds.' },

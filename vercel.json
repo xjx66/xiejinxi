@@ -1,8 +1,3 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/proxy/:match*",
-      "destination": "https://ark.cn-beijing.volces.com/:match*"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

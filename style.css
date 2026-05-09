@@ -173,12 +173,6 @@ html {
     opacity: 1;
 }
 
-/* Special handling for create modal which uses flex display directly */
-#createModelModal[style*="display: flex"] .modal-content {
-    opacity: 1;
-    transform: translateY(0);
-}
-
 .modal-header {
     display: flex;
     justify-content: space-between;

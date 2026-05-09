@@ -1,3 +1,6 @@
+// 加载 .env 文件中的环境变量（如果存在）
+try { require('dotenv').config(); } catch (_) { /* dotenv 未安装时静默忽略，避免线上环境报错 */ }
+
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
@@ -6,7 +9,14 @@ const fs = require('fs');
 const http = require('http');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+// 从环境变量读取密钥（绝不硬编码）
+const VOLCENGINE_API_KEY = process.env.VOLCENGINE_API_KEY;
+
+if (!VOLCENGINE_API_KEY) {
+    console.warn('⚠️  VOLCENGINE_API_KEY 未设置，/api/proxy 将无法注入 Authorization 头');
+}
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -26,9 +36,9 @@ const apiProxy = createProxyMiddleware({
         '^/api/proxy': '' // 去掉 /api/proxy 前缀
     },
     onProxyReq: (proxyReq, req, res) => {
-        if (req.method === 'POST' && req.body) {
-            // 如果必须放在 body parser 后面，可以在这里重新写入 body，但最好是把 proxy 放在前面
-            // 此处我们将 proxy 放在 body parser 前面，所以不会有 body 被消费的问题
+        // 服务端注入 Authorization，前端不再需要携带任何 key
+        if (VOLCENGINE_API_KEY) {
+            proxyReq.setHeader('Authorization', `Bearer ${VOLCENGINE_API_KEY}`);
         }
         console.log(`Proxying ${req.method} request to: ${proxyReq.host}${proxyReq.path}`);
     },
@@ -55,109 +65,6 @@ app.use((req, res, next) => {
 app.get('/ping', (req, res) => {
     res.send('pong');
 });
-
-// -----------------------------------------------------------------------
-// Tencent Cloud Hunyuan 3D API Proxy (New Version)
-// -----------------------------------------------------------------------
-const HUNYUAN_API_KEY = 'sk-arJEHmoXhjoidCOR6J7CAzgK7QCaQdGkFH7hYKg3Wiyaaobf';
-const HUNYUAN_BASE_URL = 'https://api.ai3d.cloud.tencent.com';
-
-async function callHunyuanAPI(endpoint, payload) {
-    console.log(`Calling Hunyuan API: ${endpoint}`);
-    console.log(`Payload:`, payload);
-    console.log(`Headers:`, {
-        'Authorization': HUNYUAN_API_KEY,
-        'Content-Type': 'application/json'
-    });
-    
-    try {
-        const { default: fetch } = await import('node-fetch');
-        const response = await fetch(`${HUNYUAN_BASE_URL}${endpoint}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': HUNYUAN_API_KEY,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        console.log(`Response status: ${response.status}`);
-        const data = await response.json();
-        console.log(`Response data:`, data);
-        
-        if (!response.ok) {
-            throw new Error(data.message || `API Error: ${response.status}`);
-        }
-        return data;
-    } catch (error) {
-        console.error('API Call Error:', error);
-        throw error;
-    }
-}
-
-// Text-to-3D Endpoint
-app.post('/api/hunyuan/text-to-3d', async (req, res) => {
-    try {
-        const { prompt } = req.body;
-        if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-
-        const result = await callHunyuanAPI('/v1/ai3d/submit', {
-            "Prompt": prompt
-        });
-        
-        // Map JobId if needed (based on actual API response structure)
-        const jobId = result.JobId || result.job_id || result.id || (result.Response && result.Response.JobId);
-        res.json({ JobId: jobId });
-    } catch (error) {
-        console.error('Text-to-3D Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Image-to-3D Endpoint
-app.post('/api/hunyuan/image-to-3d', async (req, res) => {
-    try {
-        const { imageBase64 } = req.body;
-        if (!imageBase64) return res.status(400).json({ error: 'ImageBase64 is required' });
-
-        const result = await callHunyuanAPI('/v1/ai3d/submit', {
-            "ImageBase64": imageBase64 
-        });
-        
-        // Map JobId if needed (based on actual API response structure)
-        const jobId = result.JobId || result.job_id || result.id || (result.Response && result.Response.JobId);
-        res.json({ JobId: jobId });
-    } catch (error) {
-        console.error('Image-to-3D Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Query Status Endpoint
-app.get('/api/hunyuan/query', async (req, res) => {
-    try {
-        const { jobId } = req.query;
-        if (!jobId) return res.status(400).json({ error: 'JobId is required' });
-
-        const result = await callHunyuanAPI('/v1/ai3d/query', {
-            "JobId": jobId
-        });
-        
-        // Ensure result structure matches what talkinghead.js expects
-        // talkinghead.js expects: { JobStatus: 'SUCCESS', ResultUrl: '...' }
-        // We might need to map the result based on actual API response
-        const responseData = result.Response || result;
-        res.json({
-            JobStatus: responseData.Status || responseData.status || (responseData.ResultUrl ? 'SUCCESS' : 'PROCESSING'),
-            ResultUrl: responseData.ResultUrl || responseData.result_url || (responseData.ResultList && responseData.ResultList[0] && responseData.ResultList[0].ModelUrl)
-        });
-    } catch (error) {
-        console.error('Query Status Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-
 
 // 托管静态文件 (当前目录)
 app.use(express.static(path.join(__dirname, '.')));
