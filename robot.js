@@ -134,7 +134,7 @@ function init() {
     } );
 
     renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
-    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.setPixelRatio( Math.min(window.devicePixelRatio, 2) );
     renderer.setSize( container.clientWidth, container.clientHeight );
     container.appendChild( renderer.domElement );
 
@@ -286,7 +286,7 @@ function onWindowResize() {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize( container.clientWidth, container.clientHeight );
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio( Math.min(window.devicePixelRatio, 2) );
 }
 
 function animate() {

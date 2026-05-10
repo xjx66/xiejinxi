@@ -858,7 +858,7 @@ class TalkingHead {
       this.camera = this.opt.avatarOnlyCamera;
     } else {
       this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      this.renderer.setPixelRatio( this.opt.modelPixelRatio * window.devicePixelRatio );
+      this.renderer.setPixelRatio( Math.min(this.opt.modelPixelRatio * window.devicePixelRatio, 2) );
       this.renderer.setSize(this.nodeAvatar.clientWidth, this.nodeAvatar.clientHeight);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;

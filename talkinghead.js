@@ -90,7 +90,8 @@ const initGlobalBackground = () => {
 
     const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: true, alpha: false });
     bgRenderer.setSize(window.innerWidth, window.innerHeight);
-    bgRenderer.setPixelRatio(window.devicePixelRatio);
+    // 限制移动端的高 Dpr，防止超大分辨率导致 iOS/移动端浏览器内存溢出 (OOM) 崩溃
+    bgRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // 确保整个渲染器也使用正确的色彩空间输出
     bgRenderer.outputColorSpace = THREE.SRGBColorSpace;
     const bgScene = new THREE.Scene();
@@ -454,6 +455,29 @@ const initGlobalBackground = () => {
     bgScene.add(wallPanels);
 
     // --- 墙面装饰：著名画作阵列 ---
+    const createBgLoader = () => {
+        const loaderContainer = document.createElement('div');
+        loaderContainer.className = 'model-loader-container';
+        loaderContainer.style.position = 'fixed';
+        loaderContainer.style.top = '0px'; 
+        loaderContainer.style.left = '0px';
+        loaderContainer.style.transform = 'translate(-50%, -50%)'; // 中心对齐
+        loaderContainer.style.display = 'none'; // 默认隐藏，在渲染循环中控制
+        
+        const loaderRing = document.createElement('div');
+        loaderRing.className = 'model-loader-ring';
+        
+        const loaderText = document.createElement('div');
+        loaderText.className = 'model-loader-text';
+        loaderText.innerText = '0%';
+        
+        loaderContainer.appendChild(loaderRing);
+        loaderContainer.appendChild(loaderText);
+        window.bgLabelsContainer.appendChild(loaderContainer);
+        
+        return { container: loaderContainer, text: loaderText };
+    };
+
     const createBgLabel = (name, time, desc) => {
         const tag = document.createElement('div');
         tag.className = 'avatar-tag';
@@ -503,7 +527,10 @@ const initGlobalBackground = () => {
         const frameGeo = new THREE.BoxGeometry(data.width + frameThickness * 2, data.height + frameThickness * 2, frameDepth);
         const canvasGeo = new THREE.PlaneGeometry(data.width, data.height);
         
-        const texture = textureLoader.load(data.url);
+        let isLoaded = false;
+        const texture = textureLoader.load(data.url, () => {
+            isLoaded = true;
+        });
         // 重要修复：网上的 jpg 图片通常是 sRGB 色彩空间，避免发黑
         texture.colorSpace = THREE.SRGBColorSpace;
         
@@ -518,7 +545,7 @@ const initGlobalBackground = () => {
         
         paintingMats.push(canvasMat); // 供主题切换时统一调整亮度
         
-        return { frameGeo, canvasGeo, canvasMat, frameDepth };
+        return { frameGeo, canvasGeo, canvasMat, frameDepth, getIsLoaded: () => isLoaded };
     });
 
     // 2. 生成足够宽的画作阵列（铺满 4000 单位，远超相机单屏视野）
@@ -551,7 +578,18 @@ const initGlobalBackground = () => {
         const label = createBgLabel(paintingData.name || "Art", paintingData.time || "", paintingData.desc || "");
         // 标签高度在画框上方
         const labelYOffset = (paintingData.height || 10) / 2 + 3;
-        paintingGroup.userData = { labelType: 'painting', labelElement: label, labelWorldOffset: new THREE.Vector3(0, labelYOffset, 0) };
+        
+        // 创建加载圈
+        const loader = createBgLoader();
+        
+        paintingGroup.userData = { 
+            labelType: 'painting', 
+            labelElement: label, 
+            labelWorldOffset: new THREE.Vector3(0, labelYOffset, 0),
+            loaderElement: loader.container,
+            loaderText: loader.text,
+            getIsLoaded: template.getIsLoaded
+        };
         window.bgLabels.push(paintingGroup);
 
         paintingsGroup.add(paintingGroup);
@@ -726,16 +764,30 @@ const initGlobalBackground = () => {
                     const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
                     itemContainer.add(hitBox);
                     
+                    let isLoaded = false;
+                    
                     // 创建标签并存储
                     const label = createBgLabel(productConfig.name || "Video", productConfig.time || "", productConfig.desc || "");
                     // 初始高度随便设，等视频加载完元数据后会动态调整
                     let labelYOffset = targetSize / 2 + 3;
+                    
+                    // 创建加载圈
+                    const loader = createBgLoader();
+                    
                     itemContainer.userData.labelType = 'product';
                     itemContainer.userData.labelElement = label;
                     itemContainer.userData.labelWorldOffset = new THREE.Vector3(0, labelYOffset, 0);
+                    itemContainer.userData.loaderElement = loader.container;
+                    itemContainer.userData.loaderText = loader.text;
+                    itemContainer.userData.getIsLoaded = () => isLoaded;
                     window.bgLabels.push(itemContainer);
                     
                     const updateVideoLayout = (aspect) => {
+                        isLoaded = true;
+                        if (loader.text) loader.text.innerText = '100%';
+                        setTimeout(() => {
+                            if (loader.container) loader.container.style.display = 'none';
+                        }, 200);
                         const height = targetSize / aspect;
                         screenMesh.geometry.dispose();
                         screenMesh.geometry = new THREE.PlaneGeometry(targetSize, height);
@@ -761,7 +813,29 @@ const initGlobalBackground = () => {
                     
                 } else {
                     // --- 模型类型产品加载逻辑 (默认 GLB) ---
+                    let isLoaded = false;
+                    let loadProgress = 0;
+                    const targetSize = productConfig.targetSize || 16;
+                    
+                    const label = createBgLabel(productConfig.name || "Model", productConfig.time || "", productConfig.desc || "");
+                    const labelYOffset = targetSize / 2 + 3;
+                    const loader = createBgLoader();
+                    
+                    itemContainer.userData.labelType = 'product';
+                    itemContainer.userData.labelElement = label;
+                    itemContainer.userData.labelWorldOffset = new THREE.Vector3(0, labelYOffset, 0);
+                    itemContainer.userData.loaderElement = loader.container;
+                    itemContainer.userData.loaderText = loader.text;
+                    itemContainer.userData.getIsLoaded = () => isLoaded;
+                    window.bgLabels.push(itemContainer);
+
                     gltfLoader.load(productConfig.url, (gltf) => {
+                        isLoaded = true;
+                        if (loader.text) loader.text.innerText = '100%';
+                        setTimeout(() => {
+                            if (loader.container) loader.container.style.display = 'none';
+                        }, 200);
+
                         const model = gltf.scene;
                         
                         const box = new THREE.Box3().setFromObject(model);
@@ -769,8 +843,6 @@ const initGlobalBackground = () => {
                         box.getSize(size);
                         const maxDim = Math.max(size.x, size.y, size.z);
                         
-                        // 使用配置中的 targetSize，如果没有则默认 16
-                        const targetSize = productConfig.targetSize || 16; 
                         if (maxDim > 0) {
                             const scale = targetSize / maxDim;
                             model.scale.set(scale, scale, scale);
@@ -788,15 +860,12 @@ const initGlobalBackground = () => {
                         const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
                         const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
                         itemContainer.add(hitBox);
-                        
-                        // 创建标签并存储
-                        const label = createBgLabel(productConfig.name || "Model", productConfig.time || "", productConfig.desc || "");
-                        const labelYOffset = targetSize / 2 + 3;
-                        itemContainer.userData.labelType = 'product';
-                        itemContainer.userData.labelElement = label;
-                        itemContainer.userData.labelWorldOffset = new THREE.Vector3(0, labelYOffset, 0);
-                        window.bgLabels.push(itemContainer);
-                    }, undefined, (error) => {
+                    }, (xhr) => {
+                        if (xhr.lengthComputable) {
+                            const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+                            if (loader.text) loader.text.innerText = percentComplete + '%';
+                        }
+                    }, (error) => {
                         console.error(`Error loading product (${productConfig.url}):`, error);
                         itemContainer.add(new THREE.Mesh(holoGeo, holoMat));
                         const hitBoxGeo = new THREE.BoxGeometry(4, 4, 4);
@@ -1227,13 +1296,15 @@ const initGlobalBackground = () => {
             
             if (currentLayer !== 'none') {
                 const tempV = new THREE.Vector3();
+                const tempVLoader = new THREE.Vector3();
                 window.bgLabels.forEach(obj => {
-                    const { labelType, labelElement, labelWorldOffset } = obj.userData;
+                    const { labelType, labelElement, labelWorldOffset, loaderElement, getIsLoaded } = obj.userData;
                     if (labelElement && labelWorldOffset) {
                         
                         // 如果这个标签的类型不属于当前聚焦的层，直接隐藏
                         if (labelType !== currentLayer) {
                             labelElement.style.display = 'none';
+                            if (loaderElement) loaderElement.style.display = 'none';
                             return;
                         }
 
@@ -1245,6 +1316,7 @@ const initGlobalBackground = () => {
                         const distToCamera = tempV.z - bgCamera.position.z;
                         if (distToCamera > 0) {
                             labelElement.style.display = 'none';
+                            if (loaderElement) loaderElement.style.display = 'none';
                         } else {
                             // 投影到屏幕坐标
                             tempV.project(bgCamera);
@@ -1263,8 +1335,28 @@ const initGlobalBackground = () => {
                                 // 如果在第一层 (角色层)，fadeProgress 接近 0，则背景标签透明度低
                                 // 如果进入背景层，fadeProgress 接近 1，则背景标签透明度高
                                 labelElement.style.opacity = String(fadeProgress);
+                                
+                                // 处理加载圈
+                                if (loaderElement && getIsLoaded) {
+                                    if (!getIsLoaded()) {
+                                        // 还没加载完，更新加载圈位置
+                                        tempVLoader.setFromMatrixPosition(obj.matrixWorld);
+                                        tempVLoader.project(bgCamera);
+                                        const lx = (tempVLoader.x * 0.5 + 0.5) * window.innerWidth;
+                                        const ly = (tempVLoader.y * -0.5 + 0.5) * window.innerHeight;
+                                        
+                                        loaderElement.style.display = 'flex';
+                                        loaderElement.style.transform = `translate(-50%, -50%) scale(${0.7 + fadeProgress * 0.3})`;
+                                        loaderElement.style.left = `${lx}px`;
+                                        loaderElement.style.top = `${ly}px`;
+                                        loaderElement.style.opacity = String(fadeProgress);
+                                    } else {
+                                        loaderElement.style.display = 'none';
+                                    }
+                                }
                             } else {
                                 labelElement.style.display = 'none';
+                                if (loaderElement) loaderElement.style.display = 'none';
                             }
                         }
                     }
@@ -1274,6 +1366,9 @@ const initGlobalBackground = () => {
                 window.bgLabels.forEach(obj => {
                     if (obj.userData.labelElement) {
                         obj.userData.labelElement.style.display = 'none';
+                    }
+                    if (obj.userData.loaderElement) {
+                        obj.userData.loaderElement.style.display = 'none';
                     }
                 });
             }
@@ -1653,10 +1748,10 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         const models = [
             { url: AssetLibrary.avatars.avatar4, body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
             { url: AssetLibrary.avatars.avatar3, body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
-            { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am X an intern, bot one and bot two\'s partner" Always maintain this identity.' },
-            { url: AssetLibrary.avatars.bot1, body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?" Always maintain this identity.' },
-            { url: AssetLibrary.avatars.bot2, body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
-            { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you!" Always maintain this identity and occasionally make cute robotic sounds.' },
+            { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am X an intern, bot one and bot two\'s partner.  By the way, scroll your mouse wheel, and you will find a surprise." Always maintain this identity.' },
+            { url: AssetLibrary.avatars.bot1, body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?  By the way, scroll your mouse wheel, and you will find a surprise." Always maintain this identity.' },
+            { url: AssetLibrary.avatars.bot2, body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit! By the way, scroll your mouse wheel, and you will find a surprise." Always maintain this identity.' },
+            { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you! Scroll your mouse wheel, and you will find a surprise." Always maintain this identity and occasionally make cute robotic sounds.' },
             { url: AssetLibrary.avatars.avatar5, body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
         ];
 
