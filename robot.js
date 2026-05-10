@@ -179,23 +179,10 @@ function init() {
         const carouselItem = container.closest('.carousel-item');
         if (!carouselItem || !carouselItem.classList.contains('active')) return;
 
-        if (moved === false && event.button === 2) {
-            const rect = container.getBoundingClientRect();
-            // 使用 rect.width/height 防止 css scale 导致计算错误
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            
-            if (model) {
-                const intersects = raycaster.intersectObjects(model.children, true);
-                
-                if (intersects.length > 0) {
-                    // Randomly trigger an emote from the emotes list
-                    const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-                    playEmote(randomEmote);
-                }
-            }
+        // 触发范围与右键提示（tooltip）一致：只要在 container 内右键即触发，不再要求 raycast 命中模型本体
+        if (moved === false && event.button === 2 && model) {
+            const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
+            playEmote(randomEmote);
         }
     });
 

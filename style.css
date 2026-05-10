@@ -461,6 +461,7 @@ html {
     transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.8s ease;
     pointer-events: auto; /* 允许内部元素交互 */
 }
+
 .carousel-item:not(.active) {
     filter: brightness(0.6) drop-shadow(0 0 10px rgba(0,0,0,0.5));
     cursor: pointer;
@@ -536,6 +537,21 @@ html {
 
 [data-theme="light"] .avatar-name {
     color: rgba(0, 0, 0, 0.9); /* 白天模式名字用深黑色 */
+}
+
+/* 背景标签新增字段颜色 */
+.avatar-time {
+    color: rgba(255, 255, 255, 0.7);
+}
+[data-theme="light"] .avatar-time {
+    color: rgba(0, 0, 0, 0.7);
+}
+
+.avatar-desc {
+    color: rgba(255, 255, 255, 0.4);
+}
+[data-theme="light"] .avatar-desc {
+    color: rgba(0, 0, 0, 0.4);
 }
 
 .avatar-status {

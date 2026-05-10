@@ -1,6 +1,44 @@
 import { TalkingHead } from "talkinghead";
 import { HeadTTS } from "headtts";
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+// =======================================================================
+// 📂 资产库配置 (Asset Library)
+// 这里集中管理了场景中所有需要外部加载的贴图、模型、图片资源。
+// 方便你后续上传新资源并替换路径。
+// =======================================================================
+export const AssetLibrary = {
+    // 1. 材质贴图 (放入 assets/textures/ 目录)
+    textures: {
+        ground: './assets/textures/ground-texture.jpg',
+        wall: './assets/textures/wall-texture.jpg'
+    },
+    // 2. 展台产品模型 (放入 assets/products/ 目录)
+    // 采用数组形式，支持按顺序循环加载多个产品。可以为每个产品指定不同的尺寸 (targetSize)
+    products: [
+        { name: "米兰桥下的无家可归者", url: './assets/products/virtual/studio.glb', type: 'model', targetSize: 16, time: "202509", desc: "" },
+        { name: "博尔扎诺城市更新", url: './assets/products/virtual/albe.glb', type: 'model', targetSize: 16, time: "202409", desc: "" },
+        { name: "Claude Pets", url: './assets/products/virtual/calaudepets.mp4', type: 'video', targetSize: 16, keepAudio: false, time: "202603", desc: "claude代码泄漏" },
+        { name: "Notes App", url: './assets/products/virtual/notes.mp4', type: 'video', targetSize: 16, keepAudio: false, time: "202603", desc: "不一样的交互形式" },
+        { name: "UNI生态圈校园论坛", url: './assets/products/virtual/unieco.mp4', type: 'video', targetSize: 16, keepAudio: true, time: "202109-202409", desc: "" },
+        { name: "Panda校园专送外卖平台", url: './assets/products/virtual/panda.mp4', type: 'video', targetSize: 8, keepAudio: false, time: "202109-202409", desc: "" }
+    ],
+    // 3. 墙面名画 (放入 assets/paintings/ 目录)
+    paintings: [
+        { name: "X", url: "./assets/paintings/20260322-170017.jpeg", width: 9, height: 9, time: "202603", desc: "" }, // 缩小一倍 (18 -> 9)
+        { name: "小侄子和小侄女的自拍", url: "./assets/paintings/selfies.jpeg", width: 9, height: 9 * (1181 / 1146), time: "202602", desc: "" }, // 缩小一倍，保持比例
+        { name: "爷爷和我", url: "./assets/paintings/我和我爷爷.jpeg", width: 9, height: 9 * (1440 / 1080), time: "202407", desc: "雅安市人民医院" } // 3:4 竖向照片
+    ],
+    // 4. 数字人模型 (位于 /avatars/ 等目录)
+    avatars: {
+        bot1: 'brunette.glb',
+        bot2: 'robot_dreams.glb',
+        avatar3: 'avaturn.glb',
+        avatar4: 'avatarsdk.glb',
+        avatar5: 'mpfb.glb'
+    }
+};
 
 // Helper to find bone loosely
 function findBone(armature, namePart, side) {
@@ -36,9 +74,25 @@ const initGlobalBackground = () => {
     bgCanvas.style.pointerEvents = 'none';
     document.body.prepend(bgCanvas);
 
+    // 创建 3D 对象的 UI 标签容器
+    const bgLabelsContainer = document.createElement('div');
+    bgLabelsContainer.id = 'bg-labels-container';
+    bgLabelsContainer.style.position = 'fixed';
+    bgLabelsContainer.style.top = '0';
+    bgLabelsContainer.style.left = '0';
+    bgLabelsContainer.style.width = '100%';
+    bgLabelsContainer.style.height = '100%';
+    bgLabelsContainer.style.pointerEvents = 'none'; // 绝对不能阻挡点击事件
+    bgLabelsContainer.style.zIndex = '2'; // 叠加在背景之上，但在最前方的 UI 之下
+    document.body.appendChild(bgLabelsContainer);
+    window.bgLabelsContainer = bgLabelsContainer;
+    window.bgLabels = []; // 存储所有的标签数据以便在渲染循环中更新
+
     const bgRenderer = new THREE.WebGLRenderer({ canvas: bgCanvas, antialias: true, alpha: false });
     bgRenderer.setSize(window.innerWidth, window.innerHeight);
     bgRenderer.setPixelRatio(window.devicePixelRatio);
+    // 确保整个渲染器也使用正确的色彩空间输出
+    bgRenderer.outputColorSpace = THREE.SRGBColorSpace;
     const bgScene = new THREE.Scene();
     bgScene.background = new THREE.Color(0x050505); // 将背景改为深色，配合远处的阴影衰减
     // 使用深色线性雾气，模拟光线在远处的自然衰减，产生深邃的阴影感
@@ -49,6 +103,10 @@ const initGlobalBackground = () => {
     bgCamera.lookAt(0, 8, -300); // 调整相机朝向，使其看向深度300的墙面
 
     window.bgTargetPositionX = 0;
+    // 背景相机 Z 轴目标位置：默认初始 z = 40（看向墙的远景），
+    // 通过鼠标滚轮可让相机朝墙面"穿过模型"推进（z 减小）。
+    // 范围由 wheel 事件中的 clamp 决定：[BG_Z_MIN, BG_Z_MAX]
+    window.bgTargetPositionZ = bgCamera.position.z;
 
     // --- 纯白无限方格空间 (The Construct) 构造 ---
     // [空间部位约定说明]: 
@@ -59,60 +117,212 @@ const initGlobalBackground = () => {
     // 1. 地面/地板 (Floor)
     const floorGeo = new THREE.PlaneGeometry(4000, 4000); // 深度加大到 4000，配合雾气实现前后无限延伸
     
-    // 加载地面材质贴图
+    // 加载地面材质贴图（粗糙混凝土）
     const textureLoader = new THREE.TextureLoader();
-    const floorTexture = textureLoader.load('./ground-texture.jpg');
-    floorTexture.wrapS = THREE.RepeatWrapping;
-    floorTexture.wrapT = THREE.RepeatWrapping;
-    // 地面是 4000x4000 的正方形，为了让纹理比例合适，横向纵向各重复 40 次
-    floorTexture.repeat.set(40, 40);
-
+    
+    // 地面底板：作为瓷砖之间的"缝隙颜色"，纯色无纹理
     const floorMat = new THREE.MeshStandardMaterial({ 
-        color: 0xffffff, 
-        map: floorTexture, 
-        emissive: 0xffffff, 
-        emissiveMap: floorTexture, 
-        emissiveIntensity: 1.2,
-        roughness: 0.8
+        color: 0xdcdcdc, // 浅灰，与天花板缝隙一致
+        emissive: 0x000000,
+        emissiveIntensity: 0,
+        roughness: 1.0
     }); 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -5;
     bgScene.add(floor);
 
-    // 地面/地板 网格骨架
-    const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
-    floorGrid.material.vertexColors = false; // 禁用顶点颜色，方便动态修改材质颜色
-    floorGrid.material.color.setHex(0x111111);
-    floorGrid.position.y = -4.9; 
-    floorGrid.scale.set(1, 1, 0.6); 
-    bgScene.add(floorGrid);
+    const cellSpacing = 20.5;
+    const floorTileSize = 20.4;                      // 当前地板缝宽 = 20.5 - 20.3 = 0.2
+    const floorTileSpacing = cellSpacing;
+    const floorTileThickness = 0.3; // 瓷砖比灯薄一点，更接近真实瓷砖
+    const floorTileCols = Math.floor(4000 / floorTileSpacing);
+    const floorTileRows = Math.floor(4000 / floorTileSpacing);
+    const floorTileCount = floorTileCols * floorTileRows;
+    const floorTileGeo = new THREE.BoxGeometry(floorTileSize, floorTileThickness, floorTileSize);
+    
+    // 独立加载贴图，避免 clone() 导致异步加载的 image 数据丢失
+    const actualFloorTexture = textureLoader.load(AssetLibrary.textures.ground);
+    actualFloorTexture.wrapS = THREE.RepeatWrapping;
+    actualFloorTexture.wrapT = THREE.RepeatWrapping;
+    
+    const floorTileMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: actualFloorTexture,       // 漫反射使用独立的混凝土贴图
+        roughness: 0.95          // 高粗糙度，呈现哑光混凝土质感
+    });
+    const floorTiles = new THREE.InstancedMesh(floorTileGeo, floorTileMat, floorTileCount);
+    {
+        const dummy = new THREE.Object3D();
+        let i = 0;
+        for (let r = 0; r < floorTileRows; r++) {
+            for (let c = 0; c < floorTileCols; c++) {
+                const x = (c - floorTileCols / 2 + 0.5) * floorTileSpacing;
+                const z = (r - floorTileRows / 2 + 0.5) * floorTileSpacing;
+                // 瓷砖底面贴住地面 Y=-5，顶面凸出 thickness
+                dummy.position.set(x, -5 + floorTileThickness / 2, z);
+                dummy.updateMatrix();
+                floorTiles.setMatrixAt(i, dummy.matrix);
+                i++;
+            }
+        }
+        floorTiles.instanceMatrix.needsUpdate = true;
+    }
+    
+    // 注入 Shader，使得实例化网格中的每一块瓷砖都能从贴图的不同位置采样
+    floorTileMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = `
+            varying vec3 vWorldInstancePos;
+            ${shader.vertexShader}
+        `.replace(
+            `#include <begin_vertex>`,
+            `#include <begin_vertex>
+             vec4 instanceCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+             vWorldInstancePos = (modelMatrix * instanceCenter).xyz;`
+        );
+        shader.fragmentShader = `
+            varying vec3 vWorldInstancePos;
+            float myCustomRand(vec2 co){
+                return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+            ${shader.fragmentShader}
+        `.replace(
+            `#include <map_fragment>`,
+            `
+            #ifdef USE_MAP
+                // 根据世界坐标计算网格索引，保证平移时相同位置的纹理不变
+                float cellSpacing = 20.5;
+                float cellX = floor(vWorldInstancePos.x / cellSpacing + 0.5);
+                float cellZ = floor(vWorldInstancePos.z / cellSpacing + 0.5);
+                vec2 cellId = vec2(cellX, cellZ);
+                
+                float uOffset = myCustomRand(cellId * 1.1);
+                float vOffset = myCustomRand(cellId * 2.2);
+                float flip = myCustomRand(cellId * 3.3) > 0.5 ? 1.0 : 0.0;
+
+                vec2 modifiedUv = vMapUv;
+                if (flip > 0.5) { modifiedUv.x = 1.0 - modifiedUv.x; } // 随机水平翻转
+                modifiedUv += vec2(uOffset, vOffset); // 随机 UV 偏移
+                vec4 sampledDiffuseColor = texture2D( map, modifiedUv );
+                diffuseColor *= sampledDiffuseColor;
+            #endif
+            `
+        );
+    };
+
+    bgScene.add(floorTiles);
+
+    // 原地板黑线网格已被瓷砖阵列的缝隙替代，不再需要 GridHelper
+    // const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
 
     // 2. 天花板 (Ceiling)
+    // 背板：浅灰，作为灯之间的缝隙颜色
     const ceilGeo = new THREE.PlaneGeometry(4000, 4000); 
-    const ceilMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 });
+    const ceilMat = new THREE.MeshStandardMaterial({ color: 0xdcdcdc, emissive: 0x000000, emissiveIntensity: 0 });
     const ceil = new THREE.Mesh(ceilGeo, ceilMat);
     ceil.rotation.x = Math.PI / 2;
     ceil.position.y = 40; 
     bgScene.add(ceil);
 
-    // 天花板 网格骨架
-    const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111);
-    ceilGrid.material.vertexColors = false;
-    ceilGrid.material.color.setHex(0x111111);
-    ceilGrid.position.y = 39.9; 
-    ceilGrid.scale.set(1, 1, 0.6); 
-    bgScene.add(ceilGrid);
+    // 方形吸顶灯阵列（代替原来的网格线）
+    // 间距与地板/墙板共用 cellSpacing，三层完全对齐
+    const lightSize = 20.2;
+    const lightSpacing = cellSpacing; // 20.5
+    const lightThickness = 0.4; // 灯具厚度，让灯块从天花板凸出来
+    const lightCols = Math.floor(4000 / lightSpacing); // 160
+    const lightRows = Math.floor(4000 / lightSpacing); // 160
+    const lightCount = lightCols * lightRows;
+    // 用 BoxGeometry 取代 PlaneGeometry，使灯具有体积厚度
+    const lightGeo = new THREE.BoxGeometry(lightSize, lightThickness, lightSize);
+    // 灯具采用 6 面材质数组：底面（玩家朝上看到的那一面）纯白发光，
+    // 4 个侧面用暗色描边来强调"灯框"轮廓，让灯块在视觉上有立体感而不是糊成一片
+    const ceilLightFaceMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.8
+    });
+    const ceilLightFrameMat = new THREE.MeshStandardMaterial({
+        color: 0xaaaaaa, emissive: 0x000000, emissiveIntensity: 0
+    });
+    // BoxGeometry 面顺序：[+x, -x, +y(顶), -y(底), +z, -z]
+    const ceilLightMats = [
+        ceilLightFrameMat, // +x 侧
+        ceilLightFrameMat, // -x 侧
+        ceilLightFrameMat, // +y 顶（贴天花板，看不见，给个深色避免影响）
+        ceilLightFaceMat,  // -y 底（朝下，玩家可见的发光面）
+        ceilLightFrameMat, // +z 侧
+        ceilLightFrameMat  // -z 侧
+    ];
+    const ceilLights = new THREE.InstancedMesh(lightGeo, ceilLightMats, lightCount);
+    // 兼容旧 three：保留单材质引用，主题切换时直接调亮度用
+    const ceilLightMat = ceilLightFaceMat;
+
+    // --- 独立闪烁灯光系统 ---
+    // 从 25600 盏灯中随机挑选 60 盏作为"接触不良"的灯
+    const brokenLightCount = 6000;
+    const brokenLightIndices = [];
+    for (let i = 0; i < brokenLightCount; i++) {
+        brokenLightIndices.push(Math.floor(Math.random() * lightCount));
+    }
+    // 添加一个自定义属性 aFlicker 作为发光强度的乘数（1.0 为正常，<1.0 为变暗）
+    const aFlicker = new Float32Array(lightCount);
+    aFlicker.fill(1.0);
+    lightGeo.setAttribute('aFlicker', new THREE.InstancedBufferAttribute(aFlicker, 1));
+    
+    // 修改灯具正面材质的 shader，应用 aFlicker 乘数
+    ceilLightFaceMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = `
+            attribute float aFlicker;
+            varying float vFlicker;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <uv_vertex>',
+            `#include <uv_vertex>
+             vFlicker = aFlicker;`
+        );
+        shader.fragmentShader = `
+            varying float vFlicker;
+        ` + shader.fragmentShader;
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+             totalEmissiveRadiance *= vFlicker;`
+        );
+    };
+    ceilLightFaceMat.needsUpdate = true;
+
+    {
+        const dummy = new THREE.Object3D();
+        let i = 0;
+        for (let r = 0; r < lightRows; r++) {
+            for (let c = 0; c < lightCols; c++) {
+                const x = (c - lightCols / 2 + 0.5) * lightSpacing;
+                const z = (r - lightRows / 2 + 0.5) * lightSpacing;
+                // 中心放在 (天花板 Y=40) 下方 lightThickness/2 处，使灯顶面贴住天花板，底面凸出来
+                dummy.position.set(x, 40 - lightThickness / 2, z);
+                dummy.rotation.set(0, 0, 0); // BoxGeometry 默认朝向已是水平，无需旋转
+                dummy.updateMatrix();
+                ceilLights.setMatrixAt(i++, dummy.matrix);
+            }
+        }
+        ceilLights.instanceMatrix.needsUpdate = true;
+    }
+    bgScene.add(ceilLights);
+
+    // 原天花板网格已被灯阵列替代，保留地板的 GridHelper 即可
+    // const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
 
     // 3. 墙/墙面 (Wall)
-    const wallGeo = new THREE.PlaneGeometry(4000, 200); 
+    // 减小墙的高度，避免插入地板和天花板。高度 = 原高度(45) - 地板厚度 - 天花板灯厚度
+    const wallHeight = 45 - floorTileThickness - lightThickness;
+    // 墙的 Y 中心点也要相应偏移，正好夹在地板顶部和灯底部之间
+    const wallCenterY = 17.5 + (floorTileThickness - lightThickness) / 2;
+    const wallGeo = new THREE.PlaneGeometry(4000, wallHeight); 
     
     // 加载材质贴图 (复用上面定义的 textureLoader)
-    const wallTexture = textureLoader.load('./wall-texture.jpg'); // 请确保将图片保存为 wall-texture.jpg 并放在根目录
+    const wallTexture = textureLoader.load(AssetLibrary.textures.wall);
     wallTexture.wrapS = THREE.RepeatWrapping;
     wallTexture.wrapT = THREE.RepeatWrapping;
-    // 根据墙面的宽高比 (4000:200 = 20:1)，让贴图在水平方向重复 40 次，垂直方向重复 2 次，保证比例协调
-    wallTexture.repeat.set(40, 2);
+    // 根据墙面的宽高比 (4000:44.3 ≈ 90:1)，让贴图比例协调
+    wallTexture.repeat.set(40, 0.443);
 
     const wallMat = new THREE.MeshStandardMaterial({ 
         color: 0xffffff, 
@@ -123,8 +333,230 @@ const initGlobalBackground = () => {
         roughness: 0.9 // 混凝土粗糙度
     });
     const wall = new THREE.Mesh(wallGeo, wallMat);
-    wall.position.set(0, 17.5, -295); // 放置在 z=-295 (300附近)，正好是地面网格的一条线上
+    wall.position.set(0, wallCenterY, -295); // 放置在 z=-295 (300附近)，正好是地面网格的一条线上
     bgScene.add(wall);
+
+    // 墙面板阵列：长方形面板按水平方向排列，仅保留垂直方向缝隙
+    // 与天花板灯、地板瓷砖结构对称（InstancedMesh + 跟随相机吸附位移）
+    // 缝隙对齐原则：
+    //   - 三层共享 cellSpacing（缝中线位置完全一致）
+    //   - 各自的"块宽度"独立可调，从而让缝宽（= cellSpacing - 块宽）可以单独控制
+    //   - 例如：地板缝宽 = cellSpacing - floorTileSize；墙缝宽 = cellSpacing - wallPanelWidth
+    const wallPanelWidth = 20.2;                       // 墙板宽度，独立可调（当前 20.2，与天花板灯一致，缝宽 0.3）
+    const wallPanelSpacing = cellSpacing;              // 节奏与地板/天花板一致 → 缝中线对齐
+    const wallPanelHeight = wallHeight;                // 与缩减后的墙等高，不再穿模地板和天花板
+    const wallPanelThickness = 0.3;                    // 面板从墙面凸出的厚度
+    const wallPanelCols = Math.floor(4000 / wallPanelSpacing);
+    const wallPanelGeo = new THREE.BoxGeometry(wallPanelWidth, wallPanelHeight, wallPanelThickness);
+    // 墙面板正面使用与地板一致的粗糙混凝土贴图（独立重新加载，避免污染地板的 UV）
+    const wallPanelTexture = textureLoader.load(AssetLibrary.textures.ground);
+    wallPanelTexture.wrapS = THREE.RepeatWrapping;
+    wallPanelTexture.wrapT = THREE.RepeatWrapping;
+    // 调整 repeat，原高 200 时垂直重复 6 次，现高等比例缩放
+    wallPanelTexture.repeat.set(1, 6 * (wallPanelHeight / 200));
+    // 面板正面（朝向相机的 +z 面）：粗糙混凝土
+    // 加一档 emissiveMap 自发光，让墙面在仅有顶部灯光的房间里不会偏黑（与原 wallMat 同思路）
+    const wallPanelFaceMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: wallPanelTexture,
+        emissive: 0xffffff,
+        emissiveMap: wallPanelTexture,
+        emissiveIntensity: 1,    // 比原墙的 1.2 略低一档，避免太亮失去混凝土质感
+        roughness: 0.95            // 高粗糙度，与地板一致的哑光混凝土质感
+    });
+    // 面板侧面用中灰描边，强化"一块一块"的立体感
+    const wallPanelFrameMat = new THREE.MeshStandardMaterial({
+        color: 0xaaaaaa, emissive: 0x000000, emissiveIntensity: 0
+    });
+    // BoxGeometry 面顺序：[+x, -x, +y, -y, +z, -z]
+    const wallPanelMats = [
+        wallPanelFrameMat, // +x 侧（垂直缝处的边框）
+        wallPanelFrameMat, // -x 侧（垂直缝处的边框）
+        wallPanelFrameMat, // +y 顶（在画面外）
+        wallPanelFrameMat, // -y 底（在画面外）
+        wallPanelFaceMat,  // +z 朝向相机的正面
+        wallPanelFrameMat  // -z 贴墙的背面
+    ];
+    const wallPanels = new THREE.InstancedMesh(wallPanelGeo, wallPanelMats, wallPanelCols);
+    {
+        const dummy = new THREE.Object3D();
+        let i = 0;
+        for (let c = 0; c < wallPanelCols; c++) {
+            // 墙板与地板瓷砖共用同一中心节奏（spacing 相同、起点相同），
+            // 因此每块墙板正中心对齐其前方的一块地板瓷砖正中心，墙缝自然对齐地缝
+            const x = (c - wallPanelCols / 2 + 0.5) * wallPanelSpacing;
+            // 中心放在墙面前方（+z），让面板正面凸出原墙
+            // 高度使用 wallCenterY，精确夹在地板和天花板之间
+            dummy.position.set(x, wallCenterY, -295 + wallPanelThickness / 2);
+            dummy.updateMatrix();
+            wallPanels.setMatrixAt(i++, dummy.matrix);
+        }
+        wallPanels.instanceMatrix.needsUpdate = true;
+    }
+
+    wallPanelFaceMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = `
+            varying vec3 vWorldInstancePos;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+             vec4 instanceCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+             vWorldInstancePos = (modelMatrix * instanceCenter).xyz;`
+        );
+        shader.fragmentShader = `
+            varying vec3 vWorldInstancePos;
+            float myCustomRand(vec2 co){
+                return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+        ` + shader.fragmentShader;
+        // 在采样贴图前对 UV 做 per-instance 的偏移和翻转
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#ifdef USE_MAP
+               float cellSpacing = 20.5;
+               float cellX = floor(vWorldInstancePos.x / cellSpacing + 0.5);
+               vec2 cellId = vec2(cellX, 1.0); // Z 是常数，这里只按 X 随机
+               
+               float uOffset = myCustomRand(cellId * 1.1);
+               float vOffset = myCustomRand(cellId * 2.2);
+               float flip = myCustomRand(cellId * 3.3) > 0.5 ? 1.0 : 0.0;
+               
+               vec2 _wallUv = vMapUv;
+               if (flip > 0.5) { _wallUv.x = 1.0 - _wallUv.x; }
+               _wallUv += vec2(uOffset, vOffset);
+               vec4 sampledDiffuseColor = texture2D( map, _wallUv );
+               diffuseColor *= sampledDiffuseColor;
+             #endif`
+        );
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#ifdef USE_EMISSIVEMAP
+               float cellSpacingEm = 20.5;
+               float cellXEm = floor(vWorldInstancePos.x / cellSpacingEm + 0.5);
+               vec2 cellIdEm = vec2(cellXEm, 1.0);
+               
+               float uOffsetEm = myCustomRand(cellIdEm * 1.1);
+               float vOffsetEm = myCustomRand(cellIdEm * 2.2);
+               float flipEm = myCustomRand(cellIdEm * 3.3) > 0.5 ? 1.0 : 0.0;
+
+               vec2 _wallEmUv = vEmissiveMapUv;
+               if (flipEm > 0.5) { _wallEmUv.x = 1.0 - _wallEmUv.x; }
+               _wallEmUv += vec2(uOffsetEm, vOffsetEm);
+               vec4 emissiveColor = texture2D( emissiveMap, _wallEmUv );
+               totalEmissiveRadiance *= emissiveColor.rgb;
+             #endif`
+        );
+    };
+    // onBeforeCompile 修改后强制重新编译
+    wallPanelFaceMat.needsUpdate = true;
+
+    bgScene.add(wallPanels);
+
+    // --- 墙面装饰：著名画作阵列 ---
+    const createBgLabel = (name, time, desc) => {
+        const tag = document.createElement('div');
+        tag.className = 'avatar-tag';
+        tag.style.top = '0px'; 
+        tag.style.left = '0px';
+        tag.style.transform = 'translate(-50%, -100%)'; // 底部居中对齐到目标点
+        tag.style.display = 'none'; // 默认隐藏
+        
+        let html = `
+            <div class="active-indicator">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 5l6 6 6-6" />
+                    <path d="M6 13l6 6 6-6" />
+                </svg>
+            </div>
+            <span class="avatar-name">${name}</span>
+        `;
+        
+        if (time) {
+            html += `<span class="avatar-time" style="font-size: 12px; margin-top: 4px; font-weight: 500; letter-spacing: 0.5px;">${time}</span>`;
+        }
+        if (desc) {
+            html += `<span class="avatar-desc" style="font-size: 11px; text-align: center; max-width: 180px; line-height: 1.4; margin-top: 2px;">${desc}</span>`;
+        }
+        
+        tag.innerHTML = html;
+        window.bgLabelsContainer.appendChild(tag);
+        return tag;
+    };
+
+    const paintingsData = AssetLibrary.paintings;
+
+    const paintingsGroup = new THREE.Group();
+    const paintingMats = [];
+    const paintingSpacing = 30; // 与角色轮播的 X 轴偏移步长一致
+
+    // 1. 预先创建画框材质和 7 种画作的几何体/材质模板（复用资源，提升性能）
+    const frameMat = new THREE.MeshStandardMaterial({
+        color: 0x000000, // 黑色
+        roughness: 0.8,
+        metalness: 0.1
+    });
+
+    const paintingTemplates = paintingsData.map(data => {
+        const frameThickness = 0.8;
+        const frameDepth = 0.5;
+        const frameGeo = new THREE.BoxGeometry(data.width + frameThickness * 2, data.height + frameThickness * 2, frameDepth);
+        const canvasGeo = new THREE.PlaneGeometry(data.width, data.height);
+        
+        const texture = textureLoader.load(data.url);
+        // 重要修复：网上的 jpg 图片通常是 sRGB 色彩空间，避免发黑
+        texture.colorSpace = THREE.SRGBColorSpace;
+        
+        const canvasMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: texture,
+            roughness: 0.9,
+            emissive: 0xffffff,
+            emissiveMap: texture,
+            emissiveIntensity: 0.1 // 微微发光保证清晰度
+        });
+        
+        paintingMats.push(canvasMat); // 供主题切换时统一调整亮度
+        
+        return { frameGeo, canvasGeo, canvasMat, frameDepth };
+    });
+
+    // 2. 生成足够宽的画作阵列（铺满 4000 单位，远超相机单屏视野）
+    // 之前只渲染了 7 幅画，导致相机平移 snap 时能看到整个画作组在空白墙上跳跃。
+    // 现在用 133 幅画填满墙面，snap 平移时视觉上将实现完美的无缝衔接。
+    const paintingCols = 133; 
+    const halfCols = Math.floor(paintingCols / 2); // 66
+
+    for (let c = 0; c < paintingCols; c++) {
+        // 保证 c = halfCols 时（即 x = 0），对应的是 index = 3 的画作
+        let dataIndex = (c - halfCols + 3) % paintingsData.length;
+        if (dataIndex < 0) dataIndex += paintingsData.length;
+        
+        const template = paintingTemplates[dataIndex];
+        const paintingGroup = new THREE.Group();
+        
+        const x = (c - halfCols) * paintingSpacing;
+        // 高度改为 wallCenterY 保持在墙面正中心，Z 轴稍微凸出墙板
+        paintingGroup.position.set(x, wallCenterY, -294.6 + wallPanelThickness);
+        
+        const frame = new THREE.Mesh(template.frameGeo, frameMat);
+        paintingGroup.add(frame);
+        
+        const canvasMesh = new THREE.Mesh(template.canvasGeo, template.canvasMat);
+        canvasMesh.position.z = template.frameDepth / 2 + 0.01;
+        paintingGroup.add(canvasMesh);
+        
+        // 创建标签并存储在 userData 中
+        const paintingData = paintingsData[dataIndex];
+        const label = createBgLabel(paintingData.name || "Art", paintingData.time || "", paintingData.desc || "");
+        // 标签高度在画框上方
+        const labelYOffset = (paintingData.height || 10) / 2 + 3;
+        paintingGroup.userData = { labelType: 'painting', labelElement: label, labelWorldOffset: new THREE.Vector3(0, labelYOffset, 0) };
+        window.bgLabels.push(paintingGroup);
+
+        paintingsGroup.add(paintingGroup);
+    }
+    bgScene.add(paintingsGroup);
 
     // 墙面网格骨架 (移除网格，让混凝土纹理更纯粹)
     // 因为这面墙上已经有了贴图带来的分隔缝隙，再叠加上黑色的 GridHelper 会显得杂乱
@@ -136,19 +568,513 @@ const initGlobalBackground = () => {
     // wallGrid.scale.set(1, 1, 0.6); 
     // bgScene.add(wallGrid);
 
+    // --- 悬浮产品展示 (Product Showcase) ---
+    const showcaseGroup = new THREE.Group();
+    const showcaseSpacing = 30; // 与角色/画作间距保持一致
+    const showcaseCols = 134; 
+    const halfShowcaseCols = Math.floor(showcaseCols / 2);
+    
+    // 占位几何体和材质（当没有配置模型时使用）
+    const holoGeo = new THREE.BoxGeometry(4, 4, 4);
+    const holoMat = new THREE.MeshStandardMaterial({
+        color: 0x00ffff,
+        emissive: 0x00ffff,
+        emissiveIntensity: 0.8,
+        transparent: true,
+        opacity: 0.6,
+        wireframe: true // 增加科技感
+    });
+
+    const animatedShowcaseItems = []; // 保存需要做动画的物品
+    const gltfLoader = new GLTFLoader();
+
+    // 拿到我们配置的产品列表
+    const productList = AssetLibrary.products && AssetLibrary.products.length > 0 
+        ? AssetLibrary.products 
+        : [];
+         
+    // 保存各个产品的全局旋转状态，以便轮播时保持状态
+    // 默认视角：模型向前倾斜45度 (Math.PI / 4)，视频垂直于地面 (0)
+    const globalProductRotations = productList.length > 0 
+        ? productList.map((product) => ({ 
+            x: product.type === 'video' ? 0 : Math.PI / 4, 
+            y: 0 
+        }))
+        : [{ x: Math.PI / 4, y: 0 }];
+
+    // 全局视频纹理缓存，避免同一个视频重复创建多个 video 标签导致声音重叠和性能问题
+    if (!window.globalVideoCache) window.globalVideoCache = {};
+    const globalVideoCache = window.globalVideoCache;
+
+    for (let c = 0; c < showcaseCols; c++) {
+        const x = (c - halfShowcaseCols) * showcaseSpacing;
+        const z = -150; // 中景位置
+        
+        // 创建一个外层容器，用来承载几何体或加载后的模型
+        const itemContainer = new THREE.Group();
+        // 将产品的基础高度设为墙高度的一半 (wallCenterY)
+        const baseItemY = wallCenterY;
+        itemContainer.position.set(x, baseItemY, z);
+        
+        if (productList.length > 0) {
+            // 根据循环索引 c 拿到对应的产品配置
+            const productConfig = productList[c % productList.length];
+            
+            if (productConfig && productConfig.url) {
+                if (productConfig.type === 'video') {
+                    // --- 视频类型产品加载逻辑 ---
+                    let videoTexture;
+                    let video;
+                    
+                    if (globalVideoCache[productConfig.url]) {
+                        // 复用已存在的视频纹理
+                        videoTexture = globalVideoCache[productConfig.url].texture;
+                        video = globalVideoCache[productConfig.url].video;
+                    } else {
+                        // 首次加载该视频
+                        video = document.createElement('video');
+                        video.src = productConfig.url;
+                        video.crossOrigin = 'anonymous';
+                        video.loop = true;
+                        video.playsInline = true;
+                        
+                        if (productConfig.keepAudio) {
+                            video.muted = false; // 保留原始音频
+                        } else {
+                            video.muted = true;
+                        }
+                        
+                        // 不在初始化时立即 play()，而是等到切换到它时再 play
+                        videoTexture = new THREE.VideoTexture(video);
+                        videoTexture.colorSpace = THREE.SRGBColorSpace;
+                        
+                        if (!window.globalVideoCache) window.globalVideoCache = {};
+                        window.globalVideoCache[productConfig.url] = { texture: videoTexture, video: video };
+                    }
+                    
+                    const targetSize = productConfig.targetSize || 16;
+                    
+                    // 默认先用 16:9 的比例创建一个投影面
+                    const screenGeo = new THREE.PlaneGeometry(targetSize, targetSize * (9/16));
+                    // 改用 MeshBasicMaterial，它完全不受场景灯光影响，绝对不会产生反光
+                    const screenMat = new THREE.MeshBasicMaterial({ 
+                        map: videoTexture, 
+                        transparent: true, 
+                        opacity: 0.9, 
+                        side: THREE.DoubleSide // 双面可见
+                    });
+                    const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+                    itemContainer.add(screenMesh);
+                    
+                    // --- 视频控制栏 UI ---
+                    const controlsGroup = new THREE.Group();
+                    
+                    // 播放/暂停按钮 (正方形小块，根据播放状态改变颜色或使用贴图，这里简单用颜色区分)
+                    const btnGeo = new THREE.PlaneGeometry(1.5, 1.5);
+                    const btnMat = new THREE.MeshBasicMaterial({ 
+                        color: video.paused ? 0xff0000 : 0x00ff00, 
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    const playPauseBtn = new THREE.Mesh(btnGeo, btnMat);
+                    playPauseBtn.position.set(-targetSize / 2 + 0.75, 0, 0);
+                    playPauseBtn.userData = { isPlayPauseBtn: true, video: video, btnMat: btnMat };
+                    controlsGroup.add(playPauseBtn);
+                    
+                    // 进度条轨道
+                    const trackWidth = targetSize - 2.5;
+                    const trackGeo = new THREE.PlaneGeometry(trackWidth, 0.3);
+                    const trackMat = new THREE.MeshBasicMaterial({ 
+                        color: 0x555555, 
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    const trackMesh = new THREE.Mesh(trackGeo, trackMat);
+                    trackMesh.position.set(0.75, 0, 0); // 居中于剩余空间
+                    trackMesh.userData = { isTrack: true, video: video, trackWidth: trackWidth };
+                    controlsGroup.add(trackMesh);
+                    
+                    // 进度条高亮
+                    const progressGeo = new THREE.PlaneGeometry(1, 0.3); // 初始宽度为1，之后通过 scale.x 调整
+                    const progressMat = new THREE.MeshBasicMaterial({ 
+                        color: 0x00ffff, 
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    const progressMesh = new THREE.Mesh(progressGeo, progressMat);
+                    progressGeo.translate(0.5, 0, 0); // 将原点移到左侧边缘，方便缩放
+                    progressMesh.position.set(0.75 - trackWidth / 2, 0, 0.01); // 放在 track 上面一点点，避免深度冲突
+                    controlsGroup.add(progressMesh);
+                    
+                    itemContainer.add(controlsGroup);
+                    
+                    // 将相关引用保存到 itemContainer 中，供全局动画更新
+                    itemContainer.userData = {
+                        isVideo: true,
+                        video: video,
+                        progressMesh: progressMesh,
+                        trackWidth: trackWidth,
+                        playPauseBtn: playPauseBtn
+                    };
+                    
+                    // 添加完全透明的碰撞盒(HitBox)
+                    const hitBoxGeo = new THREE.BoxGeometry(targetSize, targetSize, targetSize);
+                    const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+                    const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
+                    itemContainer.add(hitBox);
+                    
+                    // 创建标签并存储
+                    const label = createBgLabel(productConfig.name || "Video", productConfig.time || "", productConfig.desc || "");
+                    // 初始高度随便设，等视频加载完元数据后会动态调整
+                    let labelYOffset = targetSize / 2 + 3;
+                    itemContainer.userData.labelType = 'product';
+                    itemContainer.userData.labelElement = label;
+                    itemContainer.userData.labelWorldOffset = new THREE.Vector3(0, labelYOffset, 0);
+                    window.bgLabels.push(itemContainer);
+                    
+                    const updateVideoLayout = (aspect) => {
+                        const height = targetSize / aspect;
+                        screenMesh.geometry.dispose();
+                        screenMesh.geometry = new THREE.PlaneGeometry(targetSize, height);
+                        hitBox.geometry.dispose();
+                        hitBox.geometry = new THREE.BoxGeometry(targetSize, height, targetSize);
+                        
+                        // 动态更新标签的高度，确保它始终在视频的正上方
+                        itemContainer.userData.labelWorldOffset.y = height / 2 + 3;
+                        
+                        // 将控制栏放到视频正下方
+                        controlsGroup.position.set(0, -height / 2 - 1.5, 0);
+                    };
+
+                    // 如果视频已经加载了元数据，直接调整比例
+                    if (video.videoWidth) {
+                        updateVideoLayout(video.videoWidth / video.videoHeight);
+                    } else {
+                        // 否则等待加载完成事件
+                        video.addEventListener('loadedmetadata', () => {
+                            updateVideoLayout(video.videoWidth / video.videoHeight);
+                        });
+                    }
+                    
+                } else {
+                    // --- 模型类型产品加载逻辑 (默认 GLB) ---
+                    gltfLoader.load(productConfig.url, (gltf) => {
+                        const model = gltf.scene;
+                        
+                        const box = new THREE.Box3().setFromObject(model);
+                        const size = new THREE.Vector3();
+                        box.getSize(size);
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        
+                        // 使用配置中的 targetSize，如果没有则默认 16
+                        const targetSize = productConfig.targetSize || 16; 
+                        if (maxDim > 0) {
+                            const scale = targetSize / maxDim;
+                            model.scale.set(scale, scale, scale);
+                        }
+                        
+                        // 居中模型
+                        box.setFromObject(model);
+                        box.getCenter(size);
+                        model.position.sub(size); // 调整位置使中心对齐容器原点
+
+                        itemContainer.add(model);
+                        
+                        // 添加一个完全透明的碰撞盒(HitBox)
+                        const hitBoxGeo = new THREE.BoxGeometry(targetSize, targetSize, targetSize);
+                        const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+                        const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
+                        itemContainer.add(hitBox);
+                        
+                        // 创建标签并存储
+                        const label = createBgLabel(productConfig.name || "Model", productConfig.time || "", productConfig.desc || "");
+                        const labelYOffset = targetSize / 2 + 3;
+                        itemContainer.userData.labelType = 'product';
+                        itemContainer.userData.labelElement = label;
+                        itemContainer.userData.labelWorldOffset = new THREE.Vector3(0, labelYOffset, 0);
+                        window.bgLabels.push(itemContainer);
+                    }, undefined, (error) => {
+                        console.error(`Error loading product (${productConfig.url}):`, error);
+                        itemContainer.add(new THREE.Mesh(holoGeo, holoMat));
+                        const hitBoxGeo = new THREE.BoxGeometry(4, 4, 4);
+                        const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+                        itemContainer.add(new THREE.Mesh(hitBoxGeo, hitBoxMat));
+                    });
+                }
+            }
+        } else {
+            // 如果列表为空，默认使用占位符
+            itemContainer.add(new THREE.Mesh(holoGeo, holoMat));
+            const hitBoxGeo = new THREE.BoxGeometry(4, 4, 4);
+            const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+            itemContainer.add(new THREE.Mesh(hitBoxGeo, hitBoxMat));
+        }
+        
+        showcaseGroup.add(itemContainer);
+        animatedShowcaseItems.push({
+            mesh: itemContainer,
+            baseY: baseItemY,
+            seed: c * 0.1, // 用于动画错位
+            productIndex: productList.length > 0 ? (c % productList.length) : 0 // 记录产品索引，用于同步旋转
+        });
+    }
+    bgScene.add(showcaseGroup);
+
+    // --- 展品交互 (Product Interaction) ---
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedProduct = null;
+    let isDraggingProduct = false;
+    let isDraggingVideoTrack = false;
+    let draggedVideoTrackMesh = null;
+    let previousMousePosition = { x: 0, y: 0 };
+    let productPointerDownX = 0;
+    let productPointerDownY = 0;
+    let productPointerDownTime = 0;
+
+    window.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return; // 只响应左键
+        
+        // 避免和 UI 控件的拖拽冲突
+        if (e.target.closest && (e.target.closest('button') || e.target.closest('input'))) {
+            return;
+        }
+
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, bgCamera);
+
+        // 仅检测展示组内的物体
+        const intersects = raycaster.intersectObjects(showcaseGroup.children, true);
+
+        if (intersects.length > 0) {
+            let intersectedMesh = intersects[0].object;
+
+            let object = intersectedMesh;
+            // 向上追溯到 itemContainer 层级
+            while (object.parent && object.parent !== showcaseGroup) {
+                object = object.parent;
+            }
+            selectedProduct = object;
+            isDraggingProduct = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+            
+            productPointerDownX = e.clientX;
+            productPointerDownY = e.clientY;
+            productPointerDownTime = Date.now();
+            
+            // 如果点中了产品，强制阻止事件继续向下传递（这会阻止角色 Canvas 接收到该点击，从而防止角色旋转）
+            e.stopPropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true }); // 使用捕获阶段，抢在其他元素之前处理
+
+    window.addEventListener('pointermove', (e) => {
+        if (isDraggingProduct && selectedProduct) {
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+            
+            // 找到当前选中的产品对应的索引
+            const itemData = animatedShowcaseItems.find(item => item.mesh === selectedProduct);
+            if (itemData && globalProductRotations[itemData.productIndex]) {
+                const rot = globalProductRotations[itemData.productIndex];
+                rot.y += deltaX * 0.01;
+                rot.x += deltaY * 0.01;
+            } else {
+                // 降级保护
+                selectedProduct.rotation.y += deltaX * 0.01;
+                selectedProduct.rotation.x += deltaY * 0.01;
+            }
+            
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+            
+            // 旋转产品时，重置自动轮播计时器，防止背景突然滑走
+            if (window.resetAutoRotateTimer) window.resetAutoRotateTimer();
+            e.stopPropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true });
+
+    const stopDragging = (e) => {
+        if (isDraggingProduct) {
+            const dx = e.clientX - productPointerDownX;
+            const dy = e.clientY - productPointerDownY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const timeElapsed = Date.now() - productPointerDownTime;
+
+            isDraggingProduct = false;
+            selectedProduct = null;
+            e.stopPropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            // 如果是单击，触发轮播切换
+            if (distance < 10 && timeElapsed < 500) {
+                if (window.handleCarouselClick) {
+                    window.handleCarouselClick(e.clientX);
+                }
+            }
+        }
+    };
+    window.addEventListener('pointerup', stopDragging, { capture: true });
+    window.addEventListener('pointercancel', stopDragging, { capture: true });
+
+    // --- 视频键盘交互 ---
+    window.addEventListener('keydown', (e) => {
+        // 如果用户正在输入框里打字，不要拦截按键
+        if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'textarea') {
+            return;
+        }
+
+        // 产品位于 z = -150，墙位于 z = -295。
+        // 相机越靠近产品，其 Z 坐标越接近 -150，甚至更小。
+        // 我们通过相机的 Z 坐标来判断用户是否在产品层（比如当 z 在 -80 到 -200 之间时算作产品层）
+        const cameraZ = bgCamera.position.z;
+        const isAtProductLayer = cameraZ <= -80 && cameraZ >= -200;
+        
+        if (!isAtProductLayer) return;
+
+        const activeProductIndex = window._lastActiveProductIndex;
+        if (activeProductIndex === -1 || !productList[activeProductIndex]) return;
+        
+        const activeProduct = productList[activeProductIndex];
+        if (activeProduct.type !== 'video') return;
+        
+        const cache = globalVideoCache[activeProduct.url];
+        if (!cache || !cache.video) return;
+        
+        const video = cache.video;
+
+        if (e.code === 'Space') {
+            e.preventDefault(); // 防止空格键使页面向下滚动
+            // 切换当前视频的播放/暂停
+            if (video.paused) {
+                playVideoWithAudioFallback(video, activeProduct.keepAudio);
+            } else {
+                video.pause();
+            }
+        } else if (e.code === 'ArrowLeft') {
+            // 快退 5 秒
+            video.currentTime = Math.max(0, video.currentTime - 5);
+        } else if (e.code === 'ArrowRight') {
+            // 快进 5 秒
+            if (video.duration) {
+                video.currentTime = Math.min(video.duration, video.currentTime + 5);
+            }
+        }
+    });
+
     // 4. 灯光系统
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
     bgScene.add(ambientLight);
     
-    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-    dirLight.position.set(0, 30, -100);
-    bgScene.add(dirLight);
+    // 顶部主光源：从正上方向下照射，照亮产品顶部
+    const topLight = new THREE.DirectionalLight(0xffffff, 2);
+    topLight.position.set(0, 100, 0);
+    bgScene.add(topLight);
+
+    // 底部补光：从正下方向上照射，防止产品旋转时底部死黑
+    const bottomLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    bottomLight.position.set(0, -100, 0);
+    bgScene.add(bottomLight);
+
+    // 正面辅助光：从正前方照射
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    frontLight.position.set(0, 0, 100); 
+    bgScene.add(frontLight);
+
+    // 背面辅助光：从正后方照射，确保旋转到背面依然清晰
+    const backLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    backLight.position.set(0, 0, -100); 
+    bgScene.add(backLight);
+
+    const playVideoWithAudioFallback = (video, keepAudio) => {
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                // 浏览器限制了非静音自动播放，先静音播放
+                console.warn('Autoplay blocked for video, muting to play:', error);
+                video.muted = true;
+                video.play();
+                
+                // 如果用户要求保留音频，我们监听第一次交互事件来解除静音
+                if (keepAudio) {
+                    const unmuteHandler = () => {
+                        video.muted = false;
+                        window.removeEventListener('pointerdown', unmuteHandler);
+                        window.removeEventListener('wheel', unmuteHandler);
+                        window.removeEventListener('keydown', unmuteHandler);
+                    };
+                    window.addEventListener('pointerdown', unmuteHandler);
+                    window.addEventListener('wheel', unmuteHandler);
+                    window.addEventListener('keydown', unmuteHandler);
+                }
+            });
+        }
+    };
 
     // 启动背景渲染动画循环
+    window._lastActiveProductIndex = -1;
     const animateBg = () => {
         requestAnimationFrame(animateBg);
+        
         // 平滑过渡背景相机的 X 轴平移
         bgCamera.position.x += (window.bgTargetPositionX - bgCamera.position.x) * 0.08;
+        // 平滑过渡背景相机的 Z 轴推进（鼠标滚轮控制：向墙面"穿过模型"聚焦）
+        bgCamera.position.z += (window.bgTargetPositionZ - bgCamera.position.z) * 0.08;
+
+        // 让 DOM 角色跟随背景相机的 Z 轴推进做"穿过"特效：
+        //   - 背景相机本身在独立的 bgScene 里，不会真的穿过角色（角色是 DOM 覆盖层）
+        //   - 通过 CSS scale + opacity 模拟：相机越靠近墙，角色越大、越透明，最终消失
+        //   - progress: 0 (未推进) → 1 (角色完全消失)
+        //   - 使用 BG_FADE_RANGE 控制"角色完全消失"对应的相机推进距离
+        const BG_FADE_RANGE = 100; // 相机沿 z 推进多少单位后角色完全消失
+        const advance = 40 - bgCamera.position.z; // bgCamera 初始 z=40，advance>0 表示在向墙推进
+        const fadeProgress = Math.max(0, Math.min(1, advance / BG_FADE_RANGE));
+
+        // 同步抬升相机视角高度：从原始 y=8 抬到墙面中心高度
+        //   - fadeProgress 0 → 1 时 y 从 8 → wallCenterY，与"穿过角色"的过程同步
+        //   - lookAt 始终指向墙面中心（z=-300, y=wallCenterY），保证抬高后仍水平正对墙
+        const BG_Y_BASE = 8;
+        const BG_Y_TARGET = wallCenterY; // 墙体几何中心
+        const currentY = BG_Y_BASE + (BG_Y_TARGET - BG_Y_BASE) * fadeProgress;
+        bgCamera.position.y = currentY;
+        // 确保视线的 Y 高度也同步抬升，保持平视，而不是一开始就仰视
+        bgCamera.lookAt(bgCamera.position.x, currentY, -300);
+
+        const turntableEl = document.getElementById('carousel-turntable');
+        if (turntableEl) {
+            // 角色边变大边淡出：scale 1 → 4，opacity 1 → 0
+            const carouselScale = 1 + fadeProgress * 3;
+            turntableEl.style.transform = `scale(${carouselScale})`;
+            turntableEl.style.opacity = String(1 - fadeProgress);
+            // 完全淡出后关闭交互，避免拦截滚轮
+            turntableEl.style.pointerEvents = fadeProgress >= 1 ? 'none' : '';
+        }
+
+        // 聊天输入框跟随角色一起淡出
+        const inputContainer = document.getElementById('talkinghead-input-container');
+        if (inputContainer && inputContainer.dataset.disabled !== "true") {
+            inputContainer.style.opacity = String(1 - fadeProgress);
+            inputContainer.style.pointerEvents = fadeProgress >= 1 ? 'none' : 'auto';
+        }
+        const loadingEl = document.getElementById('talkinghead-loading');
+        if (loadingEl) {
+            loadingEl.style.opacity = String(1 - fadeProgress);
+        }
+
+        // 大黄和X角色的右键提示图标也跟随淡出
+        document.querySelectorAll('.mouse-click-anim').forEach(anim => {
+            if (anim.parentElement) {
+                anim.parentElement.style.opacity = String(1 - fadeProgress);
+                anim.parentElement.style.pointerEvents = 'none'; // 确保本身就不阻挡事件
+            }
+        });
 
         // 1. 让天、地、墙直接跟随相机 X 轴移动，所以它们相对相机永远静止且无限延伸
         floor.position.x = bgCamera.position.x;
@@ -157,17 +1083,201 @@ const initGlobalBackground = () => {
 
         // 2. 网格单格尺寸是 4000/160 = 25。将其吸附到 25 的整数倍
         const gridOffsetX = Math.round(bgCamera.position.x / 25) * 25;
-        ceilGrid.position.x = gridOffsetX;
-        floorGrid.position.x = gridOffsetX;
-        // wallGrid.position.x = gridOffsetX; // 已经移除墙面网格
+        // 灯阵列按 lightSpacing 吸附式平移
+        ceilLights.position.x = Math.round(bgCamera.position.x / lightSpacing) * lightSpacing;
+        
+        // 恢复地板瓷砖阵列和墙面板的 snap-shift，因为它们的随机 UV 现在基于世界绝对坐标计算，不会发生跳变了
+        floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
+        wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
+        
+        // 让画作阵列按周期跟随相机循环（共 7 幅画，周期宽度 210）
+        // 因为现在画作阵列已经铺满了 4000 单位，当整体平移 210 单位时，
+        // 第 0 幅画刚好移动到第 7 幅画的位置，视觉上实现了完美的无缝衔接，消除了突然位移的违和感。
+        const paintingCycleWidth = paintingsData.length * paintingSpacing;
+        paintingsGroup.position.x = Math.round(bgCamera.position.x / paintingCycleWidth) * paintingCycleWidth;
+
+        // 展台阵列按周期跟随相机循环（根据实际配置的产品数量自动计算周期宽度）
+        const showcaseCycleWidth = Math.max(1, productList.length) * showcaseSpacing;
+        showcaseGroup.position.x = Math.round(bgCamera.position.x / showcaseCycleWidth) * showcaseCycleWidth;
+
+        // 动态判断当前位于视野中心的产品索引，控制视频按需播放
+        const N = productList.length;
+        if (N > 0) {
+            // 通过相机的绝对 Z 坐标判断是否在产品层（产品在 z=-150）
+            // 设定在 z 位于 -80 到 -200 之间时，视频可以被激活
+            const isAtProductLayer = bgCamera.position.z <= -80 && bgCamera.position.z >= -200;
+
+            // 使用 window.bgTargetPositionX 预测目标位置，确保刚开始切换就立刻响应
+            const activeSlot = Math.round(window.bgTargetPositionX / showcaseSpacing);
+            const activeProductIndex = ((activeSlot + halfShowcaseCols) % N + N) % N;
+            
+            if (activeProductIndex !== window._lastActiveProductIndex || !isAtProductLayer) {
+                // 暂停所有视频
+                Object.values(globalVideoCache).forEach(cache => {
+                    if (cache.video && !cache.video.paused) {
+                        cache.video.pause();
+                    }
+                });
+
+                if (isAtProductLayer) {
+                    window._lastActiveProductIndex = activeProductIndex;
+                    // 播放当前居中的视频
+                    const activeProduct = productList[activeProductIndex];
+                    if (activeProduct && activeProduct.type === 'video') {
+                        const cache = globalVideoCache[activeProduct.url];
+                        if (cache && cache.video) {
+                            playVideoWithAudioFallback(cache.video, activeProduct.keepAudio);
+                        }
+                    }
+                } else {
+                    // 如果不在产品层，将索引置空，确保下次进入产品层时会重新触发播放
+                    window._lastActiveProductIndex = -1;
+                }
+            }
+        }
+
+        // 展品动画（平滑浮动，移除了自转）
+        const animTime = Date.now() * 0.001; // 秒
+        animatedShowcaseItems.forEach(item => {
+            // 上下浮动
+            item.mesh.position.y = item.baseY + Math.sin(animTime * 2 + item.seed) * 0.5;
+            
+            // 同步全局旋转状态
+            if (globalProductRotations[item.productIndex]) {
+                item.mesh.rotation.x = globalProductRotations[item.productIndex].x;
+                item.mesh.rotation.y = globalProductRotations[item.productIndex].y;
+            }
+            
+            // 同步视频 UI 状态
+            if (item.mesh.userData && item.mesh.userData.isVideo) {
+                const video = item.mesh.userData.video;
+                const progressMesh = item.mesh.userData.progressMesh;
+                const trackWidth = item.mesh.userData.trackWidth;
+                const playPauseBtn = item.mesh.userData.playPauseBtn;
+                
+                if (video && progressMesh && trackWidth && video.duration) {
+                    const progress = video.currentTime / video.duration;
+                    progressMesh.scale.x = Math.max(0.001, progress * trackWidth);
+                }
+                
+                if (video && playPauseBtn) {
+                    // 根据播放状态改变按钮颜色 (红:暂停, 绿:播放)
+                    playPauseBtn.material.color.setHex(video.paused ? 0xff0000 : 0x00ff00);
+                }
+            }
+        });
+
+        // 独立灯光闪烁特效（模拟电路接触不良）：
+        // 只针对随机挑选出的 60 盏 broken 状态的灯进行独立的高频亮度计算
+        const time = Date.now() * 0.001; // 秒
+        let needsFlickerUpdate = false;
+        
+        brokenLightIndices.forEach((idx, i) => {
+            // 给每盏坏灯一个固定的伪随机 seed，使其闪烁节奏各不相同
+            const seed = idx * 1234.567;
+            
+            // 将"发作周期"和"闪烁频率"解耦
+            // 设定每盏灯独立的宏观发作周期：12 秒到 22 秒之间（十几秒的区间）
+            const cycleLength = 12.0 + (seed % 10.0);
+            const currentPhase = (time + seed) % cycleLength;
+            
+            // 极大地缩短发作期，每次只发作 0.1 到 0.3 秒，就是"干脆地闪一下"
+            const activeDuration = 0.1 + (seed % 0.2);
+            
+            let multiplier = 1.0;
+            
+            // 如果进入了十几秒一次的极短发作期
+            if (currentPhase < activeDuration) {
+                // 在这零点几秒内，要么彻底黑掉，要么微弱发光
+                const rand = Math.sin(time * 50.0 + seed) * 10000;
+                const pseudoRandom = rand - Math.floor(rand);
+                // 70% 概率彻底黑，30% 概率微亮
+                multiplier = pseudoRandom > 0.3 ? 0.0 : 0.2;
+            }
+            
+            // 只有状态改变时才更新 Float32Array，减少没必要的赋值
+            if (aFlicker[idx] !== multiplier) {
+                aFlicker[idx] = multiplier;
+                needsFlickerUpdate = true;
+            }
+        });
+        
+        if (needsFlickerUpdate) {
+            ceilLights.geometry.attributes.aFlicker.needsUpdate = true;
+        }
 
         // 【关键】：让墙面的纹理随着相机的移动而产生滚动偏移
         // 墙面的宽度是 4000，repeat 是 40，说明每一块水泥板的实际宽度是 100 单位
         // 所以当相机移动 x 时，UV 的 offset x 应该是 相机x / 4000
         wallTexture.offset.x = (bgCamera.position.x / 4000) * 40;
-        
-        // 同样让地面的纹理也随相机产生水平滚动
-        floorTexture.offset.x = (bgCamera.position.x / 4000) * 40;
+        // 地板瓷砖现在通过吸附位移实现循环，无需再做 UV offset
+        // floorTexture.offset.x = (bgCamera.position.x / 4000) * 40; // 已停用
+
+        // --- 更新 3D UI 标签 ---
+        if (window.bgLabels) {
+            const cameraZ = bgCamera.position.z;
+            
+            // 根据相机深度判断当前聚焦的层级
+            let currentLayer = 'none';
+            if (cameraZ <= -50 && cameraZ > -160) {
+                currentLayer = 'product'; // 产品层区间
+            } else if (cameraZ <= -160) {
+                currentLayer = 'painting'; // 画作层区间
+            }
+            
+            if (currentLayer !== 'none') {
+                const tempV = new THREE.Vector3();
+                window.bgLabels.forEach(obj => {
+                    const { labelType, labelElement, labelWorldOffset } = obj.userData;
+                    if (labelElement && labelWorldOffset) {
+                        
+                        // 如果这个标签的类型不属于当前聚焦的层，直接隐藏
+                        if (labelType !== currentLayer) {
+                            labelElement.style.display = 'none';
+                            return;
+                        }
+
+                        // 获取物体的世界坐标并加上偏移
+                        tempV.setFromMatrixPosition(obj.matrixWorld);
+                        tempV.add(labelWorldOffset);
+                        
+                        // 判断物体是否在相机背后
+                        const distToCamera = tempV.z - bgCamera.position.z;
+                        if (distToCamera > 0) {
+                            labelElement.style.display = 'none';
+                        } else {
+                            // 投影到屏幕坐标
+                            tempV.project(bgCamera);
+                            
+                            // 判断是否在屏幕内 (-1 到 1)
+                            if (tempV.x >= -1 && tempV.x <= 1 && tempV.y >= -1 && tempV.y <= 1 && tempV.z >= -1 && tempV.z <= 1) {
+                                const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                                const y = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+                                
+                                labelElement.style.display = 'flex';
+                                labelElement.style.transform = `translate(-50%, -100%) scale(${0.7 + fadeProgress * 0.3})`; // 远小近大
+                                labelElement.style.left = `${x}px`;
+                                labelElement.style.top = `${y}px`;
+                                
+                                // 根据相机的深度和 fadeProgress 计算透明度
+                                // 如果在第一层 (角色层)，fadeProgress 接近 0，则背景标签透明度低
+                                // 如果进入背景层，fadeProgress 接近 1，则背景标签透明度高
+                                labelElement.style.opacity = String(fadeProgress);
+                            } else {
+                                labelElement.style.display = 'none';
+                            }
+                        }
+                    }
+                });
+            } else {
+                // 如果根本不到显示区间，全部隐藏
+                window.bgLabels.forEach(obj => {
+                    if (obj.userData.labelElement) {
+                        obj.userData.labelElement.style.display = 'none';
+                    }
+                });
+            }
+        }
 
         bgRenderer.render(bgScene, bgCamera);
     };
@@ -181,42 +1291,60 @@ const initGlobalBackground = () => {
             // 白天模式：白色格子，黑色线
             bgScene.background.setHex(0xffffff);
             
-            floorMat.color.setHex(0xffffff);
-            floorMat.emissive.setHex(0xffffff);
-            floorMat.emissiveIntensity = 1.2;
+            // 地板：底板（缝隙）浅灰，瓷砖恢复为纯白底色让贴图正常呈现
+            floorMat.color.setHex(0xdcdcdc);
+            floorMat.emissive.setHex(0x000000);
+            floorMat.emissiveIntensity = 0;
+            floorTileMat.color.setHex(0xffffff);
             
-            ceilMat.color.setHex(0xffffff);
-            ceilMat.emissive.setHex(0xffffff);
-            ceilMat.emissiveIntensity = 1.2;
+            ceilMat.color.setHex(0xdcdcdc); // 恢复浅灰背板（缝隙颜色）
+            ceilMat.emissive.setHex(0x000000);
+            ceilMat.emissiveIntensity = 0;
+            // 白天模式灯亮度
+            ceilLightMat.emissiveIntensity = 0.8;
             
             wallMat.color.setHex(0xffffff);
             wallMat.emissive.setHex(0xffffff);
             wallMat.emissiveIntensity = 1.2;
-
-            const blackLine = 0x111111;
-            floorGrid.material.color.setHex(blackLine);
-            ceilGrid.material.color.setHex(blackLine);
-            // wallGrid.material.color.setHex(blackLine);
+            // 墙面板正面同步：白天纯白底色 + 强自发光，让混凝土贴图明亮
+            wallPanelFaceMat.color.setHex(0xffffff);
+            wallPanelFaceMat.emissive.setHex(0xffffff);
+            wallPanelFaceMat.emissiveIntensity = 0.8;
+            // 面板侧面框：白天用浅灰让缝隙更柔和
+            wallPanelFrameMat.color.setHex(0xaaaaaa);
+            
+            // 画作在白天模式保持明亮
+            paintingMats.forEach(mat => mat.emissiveIntensity = 0.2);
+            // wallGrid.material.color.setHex(0x111111);
         } else {
             // 夜间模式：黑色格子，白色线
             bgScene.background.setHex(0x020202);
             
-            floorMat.color.setHex(0x888888); // 地面和墙面一样，夜间调成中灰色以透出纹理
-            floorMat.emissive.setHex(0x000000); // 关闭自发光
+            // 地板：底板（缝隙）调暗，瓷砖也调成中灰让混凝土纹理仍可见
+            floorMat.color.setHex(0x222222);
+            floorMat.emissive.setHex(0x000000);
             floorMat.emissiveIntensity = 0;
+            floorTileMat.color.setHex(0x888888);
             
             ceilMat.color.setHex(0x050505);
             ceilMat.emissive.setHex(0x000000);
             ceilMat.emissiveIntensity = 0;
+            // 夜间模式灯亮度（保持夜里依然亮，作为唯一光源观感）
+            ceilLightMat.emissiveIntensity = 1.8;
             
-            wallMat.color.setHex(0x888888); // 夜间模式调暗底色，让纹理不至于完全黑死
-            wallMat.emissive.setHex(0x000000);
-            wallMat.emissiveIntensity = 0;
-
-            const whiteLine = 0xaaaaaa; // 再稍微提亮一点，使用浅灰色，增强可见度
-            floorGrid.material.color.setHex(whiteLine);
-            ceilGrid.material.color.setHex(whiteLine);
-            // wallGrid.material.color.setHex(whiteLine);
+            wallMat.color.setHex(0xbbbbbb); // 夜间底色提亮到浅灰，让水泥纹理清晰可见
+            wallMat.emissive.setHex(0x666666); // 用贴图自发光补一档，避免远处偏纯黑
+            wallMat.emissiveIntensity = 0.6;
+            // 墙面板正面同步夜间样式：底色提亮 + 自发光，避免远处偏纯黑
+            wallPanelFaceMat.color.setHex(0xbbbbbb);
+            wallPanelFaceMat.emissive.setHex(0x666666);
+            wallPanelFaceMat.emissiveIntensity = 0.6;
+            // 面板侧面框：夜间用更深的中灰，强化"一块一块"的轮廓
+            wallPanelFrameMat.color.setHex(0x666666);
+            
+            // 画作在夜间模式稍微提亮，否则会被吞没在黑暗中
+            paintingMats.forEach(mat => mat.emissiveIntensity = 0.5);
+            // wallGrid.material.color.setHex(0xaaaaaa);
         }
     };
 
@@ -239,6 +1367,33 @@ const initGlobalBackground = () => {
         bgRenderer.setSize(window.innerWidth, window.innerHeight);
         bgRenderer.render(bgScene, bgCamera);
     });
+
+    // 鼠标滚轮聚焦交互：滚动时让背景相机沿 Z 轴推进，"穿过模型"聚焦到墙面
+    //   - deltaY > 0（向下滚 / 远离自己）→ z 减小，相机靠近墙
+    //   - deltaY < 0（向上滚 / 靠近自己）→ z 增大，相机退回原位
+    // 范围限制：[BG_Z_MIN, BG_Z_MAX]，避免穿出墙体或退到天上
+    //
+    // 重要：使用 capture: true 挂在 window 上，让本监听器在事件链最前端先执行。
+    //       robot.js / decals.js / TalkingHead 内部都在角色 canvas 的 wheel 上
+    //       调用了 stopImmediatePropagation()，会把事件吞掉，普通 bubble 监听器
+    //       拿不到事件。capture 阶段 window 总是最先触发，无法被子元素阻止。
+    const BG_Z_MAX = 40;     // 默认远景位置（与 bgCamera 初始 z 一致）
+    const BG_Z_MIN = -270;   // 接近墙面（墙在 z = -295），保留一点余量避免穿模
+    
+    // ⚙️ 滚轮移动距离设置
+    // 修改这个值可以调整每次拨动鼠标滚轮时，相机向前或向后移动的距离
+    // 值越大（如 60），单次滚轮前进的距离越远，到达墙面所需滚动的次数越少；
+    // 值越小（如 10），单次滚轮前进的距离越短，感觉更平滑但需要滚动更多次。
+    const BG_Z_STEP = 15;    
+    
+    window.addEventListener('wheel', (e) => {
+        // 阻止页面默认滚动行为，让滚轮专用于场景聚焦
+        e.preventDefault();
+        const delta = Math.sign(e.deltaY) * BG_Z_STEP;
+        // deltaY > 0 时 delta 正，z 应减小（靠近墙）→ 取负号
+        const next = window.bgTargetPositionZ - delta;
+        window.bgTargetPositionZ = Math.min(BG_Z_MAX, Math.max(BG_Z_MIN, next));
+    }, { passive: false, capture: true });
 };
 
 initGlobalBackground();
@@ -496,13 +1651,13 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         if (nodeLoading) nodeLoading.style.display = 'none';
 
         const models = [
-            { url: 'avatarsdk.glb', body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
-            { url: 'avaturn.glb', body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
+            { url: AssetLibrary.avatars.avatar4, body: 'M', mood: 'neutral', preserve: false, name: '4号', status: '已离职', voice: null },
+            { url: AssetLibrary.avatars.avatar3, body: 'M', mood: 'neutral', preserve: false, name: '3号', status: '已离职', voice: null },
             { type: 'canvas', id: 'decals-container', name: 'X', status: '在职', voice: 'am_michael', personality: 'You are X, an intern. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi I am X an intern, bot one and bot two\'s partner" Always maintain this identity.' },
-            { url: 'brunette.glb', body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?" Always maintain this identity.' },
-            { url: 'robot_dreams.glb', body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
+            { url: AssetLibrary.avatars.bot1, body: 'F', mood: 'neutral', preserve: false, name: '博特万', status: '在职', voice: 'af_bella', personality: 'You are Bot1 (Bote Wan). When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot One, AI work partner of X. How can I help you?" Always maintain this identity.' },
+            { url: AssetLibrary.avatars.bot2, body: 'F', mood: 'robot', preserve: true, name: '博特兔', status: '在职', voice: 'am_adam', personality: 'You are Bot two. When greeted or asked who you are, you MUST reply EXACTLY with: "Hi! I\'m Bot two—not Bot One, but just as helpful! What\'s up? I team up with X, who\'s basically the carrot to my rabbit!" Always maintain this identity.' },
             { type: 'canvas', id: 'robot-container', name: '大黄', status: '待入职', voice: 'am_adam', personality: 'You are Da Huang (Big Yellow), an adorable little yellow robot. When greeted or asked who you are, you MUST reply EXACTLY with: "Beep boop! I am Da Huang, the little yellow robot! I am so happy to meet you!" Always maintain this identity and occasionally make cute robotic sounds.' },
-            { url: 'mpfb.glb', body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
+            { url: AssetLibrary.avatars.avatar5, body: 'F', mood: 'neutral', preserve: false, name: '5号', status: '已离职', voice: null }
         ];
 
         let heads = [];
@@ -598,7 +1753,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             const m = models[activeIndex];
             window.robotState.currentModelUrl = m.url;
             
-            if (m.preserve && m.url && m.url.includes('robot_dreams.glb')) {
+            if (m.preserve && m.url && m.url.includes(AssetLibrary.avatars.bot2)) {
                 robotState.isWaving = true;
                 setTimeout(() => robotState.isWaving = false, 3000);
             } else if (m.name === '大黄') {
@@ -618,10 +1773,12 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             const inputText = document.getElementById('talkinghead-text');
             if (inputContainer) {
                 if (m.status === '已离职') {
+                    inputContainer.dataset.disabled = "true";
                     inputContainer.style.opacity = '0';
                     inputContainer.style.pointerEvents = 'none'; // 防止透明状态下依然可以点击
                 } else {
-                    inputContainer.style.opacity = '1';
+                    inputContainer.dataset.disabled = "false";
+                    // 透明度交由 animateBg 结合 fadeProgress 动态计算，这里不写死 '1'
                     inputContainer.style.pointerEvents = 'auto';
                     if (inputText) {
                         inputText.placeholder = `say hi to ${m.name}...`;
@@ -637,6 +1794,19 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 } else {
                     window.headtts.setup({ voice: m.voice });
                 }
+            }
+        };
+
+        // 将单击切换逻辑暴露到全局，供 product 拦截后调用
+        window.handleCarouselClick = (clientX) => {
+            const rect = turntable.getBoundingClientRect();
+            const clickX = clientX - rect.left;
+            const centerX = rect.width / 2;
+
+            if (clickX < centerX) {
+                switchModel(activeIndex - 1); // 点左半屏，往左移
+            } else {
+                switchModel(activeIndex + 1); // 点右半屏，往右移
             }
         };
 
@@ -670,16 +1840,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             // 区分单次点击和拖拽/长按：
             // 如果鼠标移动距离小于 10 像素，并且按下的时间小于 500 毫秒，则认为是“点击”
             if (distance < 10 && timeElapsed < 500) {
-                // 根据点击位置的 X 坐标，判断是在屏幕的左半边还是右半边
-                const rect = turntable.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const centerX = rect.width / 2;
-
-                if (clickX < centerX) {
-                    switchModel(activeIndex - 1); // 点左半屏，往左移
-                } else {
-                    switchModel(activeIndex + 1); // 点右半屏，往右移
-                }
+                window.handleCarouselClick(e.clientX);
             }
             // 如果是拖拽（距离大）或长按（时间长），则什么也不做，让底层 Canvas 去处理旋转
         }, true);
@@ -690,13 +1851,25 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         window.resetAutoRotateTimer = () => {
             if (autoRotateTimer) clearTimeout(autoRotateTimer);
             autoRotateTimer = setTimeout(() => {
+                // 检查是否有视频正在播放
+                let isAnyVideoPlaying = false;
+                if (window.globalVideoCache) {
+                    for (const key in window.globalVideoCache) {
+                        const video = window.globalVideoCache[key].video;
+                        if (video && !video.paused) {
+                            isAnyVideoPlaying = true;
+                            break;
+                        }
+                    }
+                }
+
                 // 如果有人在说话（无论是 3D 模型还是 Robot/Canvas），或者正在请求大模型(isLoading)
-                // 或者是对话框（输入框）处于激活/聚焦状态，就不自动轮播
+                // 或者是对话框（输入框）处于激活/聚焦状态，或者【有视频正在播放】，就不自动轮播
                 const isLoading = document.getElementById('talkinghead-loading').style.display !== 'none';
                 const inputText = document.getElementById('talkinghead-text');
                 const isInputFocused = inputText && document.activeElement === inputText;
 
-                if (window.isSomeoneSpeaking || isLoading || isInputFocused) {
+                if (window.isSomeoneSpeaking || isLoading || isInputFocused || window.isAwaitingResponse || isAnyVideoPlaying) {
                     window.resetAutoRotateTimer(); // 稍后再试
                     return;
                 }
@@ -1086,7 +2259,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
                 // 初始化时，如果当前模型是激活状态，触发一次打招呼
                 if (i === activeIndex) {
-                    if (m.url.includes('robot_dreams.glb')) {
+                    if (m.url.includes(AssetLibrary.avatars.bot2)) {
                         robotState.isWaving = true;
                         setTimeout(() => robotState.isWaving = false, 3000);
                     } else {
@@ -1097,7 +2270,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
                 
                 // 将 AVATARSDK 和 AVATURN 模型向下移动 30 像素 (通过调整相机 Y 轴和目标)
-                if (m.url.includes('avaturn.glb')) {
+                if (m.url.includes(AssetLibrary.avatars.avatar3)) {
                     if (h.camera && h.cameraTarget) {
                         // 原本默认的 camera.position.y 是 0.2，向上移动约 0.05 对应屏幕上大约 30px
                         h.camera.position.y += 0.05; 
@@ -1107,7 +2280,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 }
                 
                 // 将 4号模型 (AvatarSDK) 单独向下移动 (原来的 30 像素 + 额外的 40 像素)
-                if (m.url.includes('avatarsdk.glb')) {
+                if (m.url.includes(AssetLibrary.avatars.avatar4)) {
                     if (h.camera && h.cameraTarget) {
                         // 0.05 约等于 30px，再加 40px 大约是 0.067，总共约为 0.117
                         h.camera.position.y += 0.117; 
@@ -1171,6 +2344,8 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
             // 将处理逻辑抽取为单独的函数
             window.handleSpeak = async function() {
+                // 锁住自动轮播主体，避免等待大模型期间被切换到下一个角色（修复"换人说话"Bug）
+                window.isAwaitingResponse = true;
                 try {
                     const text = nodeText.value;
                     if (text) {
@@ -1219,6 +2394,9 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                     nodeText.style.opacity = '1';
                     nodeText.style.cursor = 'text';
                     // nodeSpeak.textContent = "说话";
+                } finally {
+                    // 无论成功还是异常，都解锁；后续 isSomeoneSpeaking 守卫会接管说话期间的挂起
+                    window.isAwaitingResponse = false;
                 }
             };
 

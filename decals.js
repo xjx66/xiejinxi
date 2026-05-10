@@ -182,6 +182,12 @@ function init() {
             return;
         }
 
+        // tooltip 显示范围与右键触发范围保持一致：只在 raycast 命中涂鸦 mesh 时才显示
+        if (!intersection.intersects) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
         // 更新 tooltip 位置
         tooltip.style.display = 'block';
         tooltip.style.left = (event.clientX + 15) + 'px';
