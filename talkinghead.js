@@ -252,6 +252,35 @@ const initGlobalBackground = () => {
         ceilLightFrameMat, // +z 侧
         ceilLightFrameMat  // -z 侧
     ];
+
+    const skylightShaderPlugin = (shader) => {
+        shader.vertexShader = `
+            varying vec3 vWorldPos;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <worldpos_vertex>',
+            `#include <worldpos_vertex>
+             vec4 myWorldPosition = vec4( transformed, 1.0 );
+             #ifdef USE_INSTANCING
+                 myWorldPosition = instanceMatrix * myWorldPosition;
+             #endif
+             myWorldPosition = modelMatrix * myWorldPosition;
+             vWorldPos = myWorldPosition.xyz;`
+        );
+        shader.fragmentShader = `
+            varying vec3 vWorldPos;
+        ` + shader.fragmentShader;
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'void main() {',
+            `void main() {
+                if (vWorldPos.x > -51.2 && vWorldPos.x < 51.2 && vWorldPos.z > -551.2 && vWorldPos.z < -448.8) {
+                    discard;
+                }
+            `
+        );
+    };
+    ceilLightFaceMat.onBeforeCompile = skylightShaderPlugin;
+    ceilLightFrameMat.onBeforeCompile = skylightShaderPlugin;
     const ceilLights = new THREE.InstancedMesh(lightGeo, ceilLightMats, lightCount);
     // 兼容旧 three：保留单材质引用，主题切换时直接调亮度用
     const ceilLightMat = ceilLightFaceMat;
@@ -263,10 +292,6 @@ const initGlobalBackground = () => {
         const dummy = new THREE.Object3D();
         let i = 0;
         
-        // 计算天窗中心的行列索引 (X = 0, Z = -500)
-        const centerCol = Math.floor(lightCols / 2);
-        const centerRow = Math.round(-500 / lightSpacing + lightRows / 2 - 0.5);
-        
         for (let r = 0; r < lightRows; r++) {
             for (let c = 0; c < lightCols; c++) {
                 const x = (c - lightCols / 2 + 0.5) * lightSpacing;
@@ -274,14 +299,7 @@ const initGlobalBackground = () => {
                 // 中心放在 (天花板 Y=40) 下方 lightThickness/2 处，使灯顶面贴住天花板，底面凸出来
                 dummy.position.set(x, 40 - lightThickness / 2, z);
                 dummy.rotation.set(0, 0, 0); // BoxGeometry 默认朝向已是水平，无需旋转
-                
-                // 天窗逻辑：在 z = -500 处挖一个 5x5 的洞
-                if (Math.abs(c - centerCol) <= 2 && Math.abs(r - centerRow) <= 2) {
-                    dummy.scale.set(0, 0, 0); // 缩小到 0 隐藏
-                } else {
-                    dummy.scale.set(1, 1, 1); // 正常显示
-                }
-                
+                dummy.scale.set(1, 1, 1);
                 dummy.updateMatrix();
                 ceilLights.setMatrixAt(i++, dummy.matrix);
             }
@@ -289,6 +307,48 @@ const initGlobalBackground = () => {
         ceilLights.instanceMatrix.needsUpdate = true;
     }
     bgScene.add(ceilLights);
+
+    // --- 天窗竖井 (Skylight Shaft) ---
+    // 尺寸正好盖住 5x5 的灯光区域 (5 * 20.5 = 102.5)
+    const shaftSize = 102.5;
+    const shaftHeight = 150; // 向上延伸 150 单位，制造深邃感
+    const shaftGeo = new THREE.BoxGeometry(shaftSize, shaftHeight, shaftSize);
+    
+    const shaftWallTex = textureLoader.load(AssetLibrary.textures.wall);
+    shaftWallTex.wrapS = THREE.RepeatWrapping;
+    shaftWallTex.wrapT = THREE.RepeatWrapping;
+    shaftWallTex.repeat.set(2, 4); // 调整纹理比例
+    
+    const shaftWallMat = new THREE.MeshStandardMaterial({
+        color: 0x555555,
+        map: shaftWallTex,
+        roughness: 0.9,
+        side: THREE.BackSide // 从内部看
+    });
+    
+    const shaftTopMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0xccddee, // 偏冷的自然天光
+        emissiveIntensity: 2.0,
+        side: THREE.BackSide
+    });
+    
+    const shaftBottomMat = new THREE.MeshBasicMaterial({ visible: false });
+    
+    // BoxGeometry 面顺序：[+x, -x, +y(顶), -y(底), +z, -z]
+    const shaftMats = [
+        shaftWallMat,   // +x
+        shaftWallMat,   // -x
+        shaftTopMat,    // +y (天光)
+        shaftBottomMat, // -y (开口)
+        shaftWallMat,   // +z
+        shaftWallMat    // -z
+    ];
+    
+    const shaftMesh = new THREE.Mesh(shaftGeo, shaftMats);
+    // 放置在 z=-500, y = 天花板(40) + 竖井高度一半
+    shaftMesh.position.set(0, 40 + shaftHeight / 2, -500);
+    bgScene.add(shaftMesh);
 
     // 原天花板网格已被灯阵列替代，保留地板的 GridHelper 即可
     // const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
