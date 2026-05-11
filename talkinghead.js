@@ -30,6 +30,8 @@ export const AssetLibrary = {
         { name: "小侄子和小侄女的自拍", url: "./assets/paintings/selfies.jpeg", width: 9, height: 9 * (1181 / 1146), time: "202602", desc: "" }, // 缩小一倍，保持比例
         { name: "爷爷和我", url: "./assets/paintings/我和我爷爷.jpeg", width: 9, height: 9 * (1440 / 1080), time: "202407", desc: "雅安市人民医院" } // 3:4 竖向照片
     ],
+    // 4. 天窗中央的树
+    tree: './assets/tree/island_tree_01.glb',
     // 4. 数字人模型 (位于 /avatars/ 等目录)
     avatars: {
         bot1: 'brunette.glb',
@@ -352,6 +354,36 @@ const initGlobalBackground = () => {
     // 放置在 z=-500, y = 天花板(40) + 竖井高度一半
     shaftMesh.position.set(0, 40 + shaftHeight / 2, -500);
     bgScene.add(shaftMesh);
+
+    // --- 天窗下方的树 (Tree at Skylight Center) ---
+    // 加载 GLB 模型并放置在天窗中心的正下方地板上 (Z = -500, Y = -5)
+    gltfLoader.load(AssetLibrary.tree, (gltf) => {
+        const treeMesh = gltf.scene;
+        // 地板高度是 -5
+        treeMesh.position.set(0, -5, -500);
+        
+        // 自动计算包围盒并缩放树木，使其高度适配天花板 (45单位高)
+        const box = new THREE.Box3().setFromObject(treeMesh);
+        const size = box.getSize(new THREE.Vector3());
+        // 设定树的理想高度，比如 40，留点空隙
+        const targetHeight = 40;
+        const scale = targetHeight / size.y;
+        treeMesh.scale.set(scale, scale, scale);
+        
+        // 稍微随机旋转一下，让树看起来自然
+        treeMesh.rotation.y = Math.random() * Math.PI * 2;
+        
+        // 启用阴影
+        treeMesh.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+        bgScene.add(treeMesh);
+    }, undefined, (error) => {
+        console.warn("Skylight tree not loaded. Ensure you export the .blend file as .glb and place it at:", AssetLibrary.tree);
+    });
 
     // 原天花板网格已被灯阵列替代，保留地板的 GridHelper 即可
     // const ceilGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
