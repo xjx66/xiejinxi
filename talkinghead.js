@@ -137,7 +137,7 @@ const initGlobalBackground = () => {
     const floorTileSize = 20.4;                      // 当前地板缝宽 = 20.5 - 20.3 = 0.2
     const floorTileSpacing = cellSpacing;
     const floorTileThickness = 0.3; // 瓷砖比灯薄一点，更接近真实瓷砖
-    const floorTileCols = Math.floor(1000 / floorTileSpacing);
+    const floorTileCols = Math.floor(2000 / floorTileSpacing);
     const floorTileRows = Math.floor(2000 / floorTileSpacing);
     const floorTileCount = floorTileCols * floorTileRows;
     const floorTileGeo = new THREE.BoxGeometry(floorTileSize, floorTileThickness, floorTileSize);
@@ -230,7 +230,7 @@ const initGlobalBackground = () => {
     const lightSize = 20.2;
     const lightSpacing = cellSpacing; // 20.5
     const lightThickness = 0.4; // 灯具厚度，让灯块从天花板凸出来
-    const lightCols = Math.floor(1000 / lightSpacing);
+    const lightCols = Math.floor(2000 / lightSpacing);
     const lightRows = Math.floor(2000 / lightSpacing);
     const lightCount = lightCols * lightRows;
     // 用 BoxGeometry 取代 PlaneGeometry，使灯具有体积厚度
@@ -316,7 +316,7 @@ const initGlobalBackground = () => {
     const wallPanelSpacing = cellSpacing;              // 节奏与地板/天花板一致 → 缝中线对齐
     const wallPanelHeight = wallHeight;                // 与缩减后的墙等高，不再穿模地板和天花板
     const wallPanelThickness = 0.3;                    // 面板从墙面凸出的厚度
-    const wallPanelCols = Math.floor(1000 / wallPanelSpacing);
+    const wallPanelCols = Math.floor(2000 / wallPanelSpacing);
     const wallPanelGeo = new THREE.BoxGeometry(wallPanelWidth, wallPanelHeight, wallPanelThickness);
     // 墙面板正面使用与地板一致的粗糙混凝土贴图（独立重新加载，避免污染地板的 UV）
     const wallPanelTexture = textureLoader.load(AssetLibrary.textures.ground);
@@ -520,7 +520,7 @@ const initGlobalBackground = () => {
     // 2. 生成足够宽的画作阵列（铺满 4000 单位，远超相机单屏视野）
     // 之前只渲染了 7 幅画，导致相机平移 snap 时能看到整个画作组在空白墙上跳跃。
     // 现在用 133 幅画填满墙面，snap 平移时视觉上将实现完美的无缝衔接。
-    const paintingCols = 35; 
+    const paintingCols = 70; 
     const halfCols = Math.floor(paintingCols / 2);
 
     for (let c = 0; c < paintingCols; c++) {
@@ -578,7 +578,7 @@ const initGlobalBackground = () => {
     // --- 悬浮产品展示 (Product Showcase) ---
     const showcaseGroup = new THREE.Group();
     const showcaseSpacing = 30; // 与角色/画作间距保持一致
-    const showcaseCols = 35; 
+    const showcaseCols = 70; 
     const halfShowcaseCols = Math.floor(showcaseCols / 2);
     
     // 占位几何体和材质（当没有配置模型时使用）
