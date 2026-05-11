@@ -256,38 +256,7 @@ const initGlobalBackground = () => {
     // 兼容旧 three：保留单材质引用，主题切换时直接调亮度用
     const ceilLightMat = ceilLightFaceMat;
 
-    // --- 独立闪烁灯光系统 ---
-    // 从 25600 盏灯中随机挑选 60 盏作为"接触不良"的灯
-    const brokenLightCount = 6000;
-    const brokenLightIndices = [];
-    for (let i = 0; i < brokenLightCount; i++) {
-        brokenLightIndices.push(Math.floor(Math.random() * lightCount));
-    }
-    // 添加一个自定义属性 aFlicker 作为发光强度的乘数（1.0 为正常，<1.0 为变暗）
-    const aFlicker = new Float32Array(lightCount);
-    aFlicker.fill(1.0);
-    lightGeo.setAttribute('aFlicker', new THREE.InstancedBufferAttribute(aFlicker, 1));
-    
-    // 修改灯具正面材质的 shader，应用 aFlicker 乘数
-    ceilLightFaceMat.onBeforeCompile = (shader) => {
-        shader.vertexShader = `
-            attribute float aFlicker;
-            varying float vFlicker;
-        ` + shader.vertexShader;
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <uv_vertex>',
-            `#include <uv_vertex>
-             vFlicker = aFlicker;`
-        );
-        shader.fragmentShader = `
-            varying float vFlicker;
-        ` + shader.fragmentShader;
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <emissivemap_fragment>',
-            `#include <emissivemap_fragment>
-             totalEmissiveRadiance *= vFlicker;`
-        );
-    };
+
     ceilLightFaceMat.needsUpdate = true;
 
     {
@@ -1236,44 +1205,7 @@ const initGlobalBackground = () => {
             }
         });
 
-        // 独立灯光闪烁特效（模拟电路接触不良）：
-        // 只针对随机挑选出的 60 盏 broken 状态的灯进行独立的高频亮度计算
-        const time = Date.now() * 0.001; // 秒
-        let needsFlickerUpdate = false;
-        
-        brokenLightIndices.forEach((idx, i) => {
-            // 给每盏坏灯一个固定的伪随机 seed，使其闪烁节奏各不相同
-            const seed = idx * 1234.567;
-            
-            // 将"发作周期"和"闪烁频率"解耦
-            // 设定每盏灯独立的宏观发作周期：12 秒到 22 秒之间（十几秒的区间）
-            const cycleLength = 12.0 + (seed % 10.0);
-            const currentPhase = (time + seed) % cycleLength;
-            
-            // 极大地缩短发作期，每次只发作 0.1 到 0.3 秒，就是"干脆地闪一下"
-            const activeDuration = 0.1 + (seed % 0.2);
-            
-            let multiplier = 1.0;
-            
-            // 如果进入了十几秒一次的极短发作期
-            if (currentPhase < activeDuration) {
-                // 在这零点几秒内，要么彻底黑掉，要么微弱发光
-                const rand = Math.sin(time * 50.0 + seed) * 10000;
-                const pseudoRandom = rand - Math.floor(rand);
-                // 70% 概率彻底黑，30% 概率微亮
-                multiplier = pseudoRandom > 0.3 ? 0.0 : 0.2;
-            }
-            
-            // 只有状态改变时才更新 Float32Array，减少没必要的赋值
-            if (aFlicker[idx] !== multiplier) {
-                aFlicker[idx] = multiplier;
-                needsFlickerUpdate = true;
-            }
-        });
-        
-        if (needsFlickerUpdate) {
-            ceilLights.geometry.attributes.aFlicker.needsUpdate = true;
-        }
+
 
         // 【关键】：让墙面的纹理随着相机的移动而产生滚动偏移
         // 墙面的宽度是 4000，repeat 是 40，说明每一块水泥板的实际宽度是 100 单位
