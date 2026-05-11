@@ -262,6 +262,11 @@ const initGlobalBackground = () => {
     {
         const dummy = new THREE.Object3D();
         let i = 0;
+        
+        // 计算天窗中心的行列索引 (X = 0, Z = -500)
+        const centerCol = Math.floor(lightCols / 2);
+        const centerRow = Math.round(-500 / lightSpacing + lightRows / 2 - 0.5);
+        
         for (let r = 0; r < lightRows; r++) {
             for (let c = 0; c < lightCols; c++) {
                 const x = (c - lightCols / 2 + 0.5) * lightSpacing;
@@ -269,6 +274,14 @@ const initGlobalBackground = () => {
                 // 中心放在 (天花板 Y=40) 下方 lightThickness/2 处，使灯顶面贴住天花板，底面凸出来
                 dummy.position.set(x, 40 - lightThickness / 2, z);
                 dummy.rotation.set(0, 0, 0); // BoxGeometry 默认朝向已是水平，无需旋转
+                
+                // 天窗逻辑：在 z = -500 处挖一个 5x5 的洞
+                if (Math.abs(c - centerCol) <= 2 && Math.abs(r - centerRow) <= 2) {
+                    dummy.scale.set(0, 0, 0); // 缩小到 0 隐藏
+                } else {
+                    dummy.scale.set(1, 1, 1); // 正常显示
+                }
+                
                 dummy.updateMatrix();
                 ceilLights.setMatrixAt(i++, dummy.matrix);
             }
