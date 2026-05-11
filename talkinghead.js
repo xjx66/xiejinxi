@@ -217,9 +217,37 @@ const initGlobalBackground = () => {
     // const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
 
     // 2. 天花板 (Ceiling)
+    // --- 天窗 Shader 插件 (用于掏空 Z=-500 的区域) ---
+    const skylightShaderPlugin = (shader) => {
+        shader.vertexShader = `
+            varying vec3 vWorldPos;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <project_vertex>',
+            `#include <project_vertex>
+             vec4 myWorldPosition = vec4( transformed, 1.0 );
+             #ifdef USE_INSTANCING
+                 myWorldPosition = instanceMatrix * myWorldPosition;
+             #endif
+             myWorldPosition = modelMatrix * myWorldPosition;
+             vWorldPos = myWorldPosition.xyz;`
+        );
+        shader.fragmentShader = `
+            varying vec3 vWorldPos;
+        ` + shader.fragmentShader;
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <clipping_planes_fragment>',
+            `#include <clipping_planes_fragment>
+            if (vWorldPos.z > -551.2 && vWorldPos.z < -448.8) {
+                discard;
+            }`
+        );
+    };
+
     // 背板：浅灰，作为灯之间的缝隙颜色
     const ceilGeo = new THREE.PlaneGeometry(4000, 4000); 
     const ceilMat = new THREE.MeshStandardMaterial({ color: 0xdcdcdc, emissive: 0x000000, emissiveIntensity: 0 });
+    ceilMat.onBeforeCompile = skylightShaderPlugin;
     const ceil = new THREE.Mesh(ceilGeo, ceilMat);
     ceil.rotation.x = Math.PI / 2;
     ceil.position.y = 40; 
@@ -253,32 +281,6 @@ const initGlobalBackground = () => {
         ceilLightFrameMat  // -z 侧
     ];
 
-    const skylightShaderPlugin = (shader) => {
-        shader.vertexShader = `
-            varying vec3 vWorldPos;
-        ` + shader.vertexShader;
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <worldpos_vertex>',
-            `#include <worldpos_vertex>
-             vec4 myWorldPosition = vec4( transformed, 1.0 );
-             #ifdef USE_INSTANCING
-                 myWorldPosition = instanceMatrix * myWorldPosition;
-             #endif
-             myWorldPosition = modelMatrix * myWorldPosition;
-             vWorldPos = myWorldPosition.xyz;`
-        );
-        shader.fragmentShader = `
-            varying vec3 vWorldPos;
-        ` + shader.fragmentShader;
-        shader.fragmentShader = shader.fragmentShader.replace(
-            'void main() {',
-            `void main() {
-                if (vWorldPos.x > -51.2 && vWorldPos.x < 51.2 && vWorldPos.z > -551.2 && vWorldPos.z < -448.8) {
-                    discard;
-                }
-            `
-        );
-    };
     ceilLightFaceMat.onBeforeCompile = skylightShaderPlugin;
     ceilLightFrameMat.onBeforeCompile = skylightShaderPlugin;
     const ceilLights = new THREE.InstancedMesh(lightGeo, ceilLightMats, lightCount);
@@ -309,15 +311,16 @@ const initGlobalBackground = () => {
     bgScene.add(ceilLights);
 
     // --- 天窗竖井 (Skylight Shaft) ---
-    // 尺寸正好盖住 5x5 的灯光区域 (5 * 20.5 = 102.5)
-    const shaftSize = 102.5;
+    // 深度盖住 5 盏灯的区域 (5 * 20.5 = 102.5)
+    const shaftSizeZ = 102.5;
+    const shaftSizeX = 4000; // 横向无限宽
     const shaftHeight = 150; // 向上延伸 150 单位，制造深邃感
-    const shaftGeo = new THREE.BoxGeometry(shaftSize, shaftHeight, shaftSize);
+    const shaftGeo = new THREE.BoxGeometry(shaftSizeX, shaftHeight, shaftSizeZ);
     
     const shaftWallTex = textureLoader.load(AssetLibrary.textures.wall);
     shaftWallTex.wrapS = THREE.RepeatWrapping;
     shaftWallTex.wrapT = THREE.RepeatWrapping;
-    shaftWallTex.repeat.set(2, 4); // 调整纹理比例
+    shaftWallTex.repeat.set(80, 4); // 调整纹理比例以适应超宽的 X 轴
     
     const shaftWallMat = new THREE.MeshStandardMaterial({
         color: 0x555555,
@@ -1200,6 +1203,7 @@ const initGlobalBackground = () => {
         // 恢复地板瓷砖阵列和墙面板的 snap-shift，因为它们的随机 UV 现在基于世界绝对坐标计算，不会发生跳变了
         floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
         wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
+        shaftMesh.position.x = Math.round(bgCamera.position.x / cellSpacing) * cellSpacing;
         
         // 让画作阵列按周期跟随相机循环（共 7 幅画，周期宽度 210）
         // 因为现在画作阵列已经铺满了 4000 单位，当整体平移 210 单位时，
