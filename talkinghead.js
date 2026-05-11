@@ -97,11 +97,11 @@ const initGlobalBackground = () => {
     const bgScene = new THREE.Scene();
     bgScene.background = new THREE.Color(0x050505); // 将背景改为深色，配合远处的阴影衰减
     // 使用深色线性雾气，模拟光线在远处的自然衰减，产生深邃的阴影感
-    bgScene.fog = new THREE.Fog(0x050505, 80, 500); 
+    bgScene.fog = new THREE.Fog(0x050505, 80, 700); 
 
     const bgCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 3000); // 增加相机视野深度
     bgCamera.position.set(0, 8, 40); 
-    bgCamera.lookAt(0, 8, -300); // 调整相机朝向，使其看向深度300的墙面
+    bgCamera.lookAt(0, 8, -450); // 调整相机朝向，使其看向深度450的墙面
 
     window.bgTargetPositionX = 0;
     // 背景相机 Z 轴目标位置：默认初始 z = 40（看向墙的远景），
@@ -113,7 +113,7 @@ const initGlobalBackground = () => {
     // [空间部位约定说明]: 
     // 1. "地面" 或 "地板": 指下方 Y=-5 的大平面 (floor / floorGrid)
     // 2. "天花板": 指上方 Y=40 的大平面 (ceil / ceilGrid)
-    // 3. "墙" 或 "墙面": 指远处 Z=-295 垂直的背景平面 (wall / wallGrid)
+    // 3. "墙" 或 "墙面": 指远处 Z=-445 垂直的背景平面 (wall / wallGrid)
 
     // 1. 地面/地板 (Floor)
     const floorGeo = new THREE.PlaneGeometry(4000, 4000); // 深度加大到 4000，配合雾气实现前后无限延伸
@@ -303,7 +303,7 @@ const initGlobalBackground = () => {
         roughness: 0.9 // 混凝土粗糙度
     });
     const wall = new THREE.Mesh(wallGeo, wallMat);
-    wall.position.set(0, wallCenterY, -295); // 放置在 z=-295 (300附近)，正好是地面网格的一条线上
+    wall.position.set(0, wallCenterY, -445); // 放置在 z=-445，往后推移了150单位
     bgScene.add(wall);
 
     // 墙面板阵列：长方形面板按水平方向排列，仅保留垂直方向缝隙
@@ -357,7 +357,7 @@ const initGlobalBackground = () => {
             const x = (c - wallPanelCols / 2 + 0.5) * wallPanelSpacing;
             // 中心放在墙面前方（+z），让面板正面凸出原墙
             // 高度使用 wallCenterY，精确夹在地板和天花板之间
-            dummy.position.set(x, wallCenterY, -295 + wallPanelThickness / 2);
+            dummy.position.set(x, wallCenterY, -445 + wallPanelThickness / 2);
             dummy.updateMatrix();
             wallPanels.setMatrixAt(i++, dummy.matrix);
         }
@@ -969,7 +969,7 @@ const initGlobalBackground = () => {
             return;
         }
 
-        // 产品位于 z = -150，墙位于 z = -295。
+        // 产品位于 z = -150，墙位于 z = -445。
         // 相机越靠近产品，其 Z 坐标越接近 -150，甚至更小。
         // 我们通过相机的 Z 坐标来判断用户是否在产品层（比如当 z 在 -80 到 -200 之间时算作产品层）
         const cameraZ = bgCamera.position.z;
@@ -1077,13 +1077,13 @@ const initGlobalBackground = () => {
 
         // 同步抬升相机视角高度：从原始 y=8 抬到墙面中心高度
         //   - fadeProgress 0 → 1 时 y 从 8 → wallCenterY，与"穿过角色"的过程同步
-        //   - lookAt 始终指向墙面中心（z=-300, y=wallCenterY），保证抬高后仍水平正对墙
+        //   - lookAt 始终指向墙面中心（z=-450, y=wallCenterY），保证抬高后仍水平正对墙
         const BG_Y_BASE = 8;
         const BG_Y_TARGET = wallCenterY; // 墙体几何中心
         const currentY = BG_Y_BASE + (BG_Y_TARGET - BG_Y_BASE) * fadeProgress;
         bgCamera.position.y = currentY;
         // 确保视线的 Y 高度也同步抬升，保持平视，而不是一开始就仰视
-        bgCamera.lookAt(bgCamera.position.x, currentY, -300);
+        bgCamera.lookAt(bgCamera.position.x, currentY, -450);
 
         const turntableEl = document.getElementById('carousel-turntable');
         if (turntableEl) {
@@ -1405,7 +1405,7 @@ const initGlobalBackground = () => {
     //       调用了 stopImmediatePropagation()，会把事件吞掉，普通 bubble 监听器
     //       拿不到事件。capture 阶段 window 总是最先触发，无法被子元素阻止。
     const BG_Z_MAX = 40;     // 默认远景位置（与 bgCamera 初始 z 一致）
-    const BG_Z_MIN = -270;   // 接近墙面（墙在 z = -295），保留一点余量避免穿模
+    const BG_Z_MIN = -420;   // 接近墙面（墙在 z = -445），保留一点余量避免穿模
     
     // ⚙️ 滚轮移动距离设置
     // 修改这个值可以调整每次拨动鼠标滚轮时，相机向前或向后移动的距离
