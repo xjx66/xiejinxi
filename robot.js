@@ -33,14 +33,7 @@ function init() {
     dirLight.position.set( 3, 10, 10 );
     scene.add( dirLight );
 
-    // 加载 HDRI 环境光
-    new RGBELoader()
-        .setPath('./')
-        .load('suburban_garden_4k.hdr', function (texture) {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            // scene.background = texture; // 设置为背景 (移除，让所有模型透出全局背景)
-            scene.environment = texture; // 给模型添加真实的光影反射
-        });
+    // 移除 4K HDRI 环境光加载，避免移动端 OOM 崩溃及 404 错误
 
     const loader = new GLTFLoader();
     loader.load( 'models/gltf/RobotExpressive/RobotExpressive.glb', function ( gltf ) {
@@ -134,7 +127,7 @@ function init() {
     } );
 
     renderer = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
-    renderer.setPixelRatio( Math.min(window.devicePixelRatio, 2) );
+    renderer.setPixelRatio( Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.5 : 2) );
     renderer.setSize( container.clientWidth, container.clientHeight );
     container.appendChild( renderer.domElement );
 
@@ -286,7 +279,7 @@ function onWindowResize() {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize( container.clientWidth, container.clientHeight );
-    renderer.setPixelRatio( Math.min(window.devicePixelRatio, 2) );
+    renderer.setPixelRatio( Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.5 : 2) );
 }
 
 function animate() {

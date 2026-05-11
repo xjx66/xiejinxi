@@ -38,7 +38,7 @@ function init() {
     if (!container) return;
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.5 : 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
@@ -78,14 +78,7 @@ function init() {
     dirLight2.position.set(-1, 0.75, -0.5);
     scene.add(dirLight2);
 
-    // 加载 HDRI 环境光
-    new RGBELoader()
-        .setPath('./')
-        .load('suburban_garden_4k.hdr', function (texture) {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            // scene.background = texture; // 设置为背景 (移除，让所有模型透出全局背景)
-            scene.environment = texture; // 给模型添加真实的光影反射
-        });
+    // 移除 4K HDRI 环境光加载，避免移动端 OOM 崩溃及 404 错误
 
     const ambientLight = new THREE.AmbientLight(0x443333, 3);
     scene.add(ambientLight);
@@ -244,7 +237,7 @@ function onWindowResize() {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.5 : 2));
 }
 
 function animate() {
