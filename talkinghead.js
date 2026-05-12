@@ -323,7 +323,9 @@ const initGlobalBackground = () => {
     shaftWallTex.repeat.set(80, 4); // 调整纹理比例以适应超宽的 X 轴
     
     const shaftWallMat = new THREE.MeshStandardMaterial({
-        color: 0x555555,
+        color: 0xcccccc, // 调亮侧面墙壁颜色
+        emissive: 0x333333, // 增加少许自发光，确保内部不那么死黑
+        emissiveIntensity: 1.0,
         map: shaftWallTex,
         roughness: 0.9,
         side: THREE.BackSide // 从内部看
@@ -352,6 +354,26 @@ const initGlobalBackground = () => {
     // 放置在 z=-500, y = 天花板(40) + 竖井高度一半
     shaftMesh.position.set(0, 40 + shaftHeight / 2, -500);
     bgScene.add(shaftMesh);
+
+    // --- 天窗顶部聚光灯 ---
+    // 模拟从天井洒下的强烈自然光，照亮下方的森林
+    const skylightDir = new THREE.DirectionalLight(0xffeedd, 5.0); // 暖白强光
+    skylightDir.position.set(0, 40 + shaftHeight, -500); // 放在天井最顶部
+    skylightDir.target.position.set(0, -5, -500); // 指向地板上的树
+    
+    // 配置高精度阴影
+    skylightDir.castShadow = true;
+    skylightDir.shadow.mapSize.width = 2048;
+    skylightDir.shadow.mapSize.height = 2048;
+    skylightDir.shadow.camera.near = 0.5;
+    skylightDir.shadow.camera.far = 250;
+    skylightDir.shadow.camera.left = -200;
+    skylightDir.shadow.camera.right = 200;
+    skylightDir.shadow.camera.top = 200;
+    skylightDir.shadow.camera.bottom = -200;
+    
+    bgScene.add(skylightDir);
+    bgScene.add(skylightDir.target);
 
     // --- 在天窗中心下方种植一棵树 ---
     // 树将放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
@@ -1243,6 +1265,10 @@ const initGlobalBackground = () => {
         floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
         wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
         shaftMesh.position.x = Math.round(bgCamera.position.x / cellSpacing) * cellSpacing;
+        
+        // 让天光也跟随相机横向移动，确保下方的树永远被照亮
+        skylightDir.position.x = bgCamera.position.x;
+        skylightDir.target.position.x = bgCamera.position.x;
         
         // 让画作阵列按周期跟随相机循环（共 7 幅画，周期宽度 210）
         // 因为现在画作阵列已经铺满了 4000 单位，当整体平移 210 单位时，
