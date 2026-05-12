@@ -1265,6 +1265,8 @@ const initGlobalBackground = () => {
         floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
         wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
         shaftMesh.position.x = Math.round(bgCamera.position.x / cellSpacing) * cellSpacing;
+        // 抵消 shaftMesh 横向网格吸附造成的纹理平移，让纹理完美锚定在世界坐标系上
+        shaftWallTex.offset.x = shaftMesh.position.x / (4000 / 80);
         
         // 让天光也跟随相机横向移动，确保下方的树永远被照亮
         skylightDir.position.x = bgCamera.position.x;
