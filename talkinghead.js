@@ -356,21 +356,21 @@ const initGlobalBackground = () => {
     bgScene.add(shaftMesh);
 
     // --- 天窗顶部聚光灯 ---
-    // 模拟从天井洒下的强烈自然光，照亮下方的森林
-    const skylightDir = new THREE.DirectionalLight(0xffeedd, 5.0); // 暖白强光
+    // 模拟从天井洒下的强烈自然光，照亮下方的森林。使用 SpotLight 限制光照范围，避免影响全局
+    const skylightDir = new THREE.SpotLight(0xffeedd, 50000.0); // 暖白强光，SpotLight 遵循物理衰减，需要极高强度
     skylightDir.position.set(0, 40 + shaftHeight, -500); // 放在天井最顶部
     skylightDir.target.position.set(0, -5, -500); // 指向地板上的树
+    skylightDir.angle = Math.PI / 4; // 光锥角度
+    skylightDir.penumbra = 0.5; // 边缘柔和过渡
+    skylightDir.decay = 2.0; // 物理衰减
+    skylightDir.distance = 400; // 最大照射距离
     
     // 配置高精度阴影
     skylightDir.castShadow = true;
     skylightDir.shadow.mapSize.width = 2048;
     skylightDir.shadow.mapSize.height = 2048;
-    skylightDir.shadow.camera.near = 0.5;
+    skylightDir.shadow.camera.near = 10;
     skylightDir.shadow.camera.far = 250;
-    skylightDir.shadow.camera.left = -200;
-    skylightDir.shadow.camera.right = 200;
-    skylightDir.shadow.camera.top = 200;
-    skylightDir.shadow.camera.bottom = -200;
     
     bgScene.add(skylightDir);
     bgScene.add(skylightDir.target);
