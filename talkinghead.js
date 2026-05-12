@@ -354,25 +354,40 @@ const initGlobalBackground = () => {
     bgScene.add(shaftMesh);
 
     // --- 在天窗中心下方种植一棵树 ---
-    // 树将放置在 Z=-500, X=0, 并且底部紧贴地板 (Y=-5)
+    // 树将放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
+    const treesGroup = new THREE.Group();
+    bgScene.add(treesGroup);
+    
+    // 树的轮播配置
+    const treeSpacing = 210; // 树与树之间的横向间距
+    const treeCols = 25; // 确保覆盖横向视野
+    const treeCycleWidth = treeCols * treeSpacing;
+
     const treeLoader = new GLTFLoader();
     treeLoader.load('./assets/tree/island_tree_01_4k.gltf/island_tree_01_4k.gltf', (gltf) => {
-        const tree = gltf.scene;
-        // 地板高度是 -5，并且加上地板厚度一半大概就是 -5 的位置
-        tree.position.set(0, -5, -500);
-        // 根据树的模型初始大小可能需要缩放，这里先设置一个默认缩放比例，后续可调
-        tree.scale.set(10, 10, 10); 
+        const baseTree = gltf.scene;
+        // 放大三倍 (10 -> 30)
+        baseTree.scale.set(30, 30, 30); 
         
         // 开启阴影
-        tree.traverse((child) => {
+        baseTree.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
-                // 如果树的材质偏暗，可以稍微增加一些自发光或者调整粗糙度
             }
         });
         
-        bgScene.add(tree);
+        // 克隆并生成森林阵列
+        for (let i = 0; i < treeCols; i++) {
+            const treeClone = baseTree.clone();
+            const x = (i - Math.floor(treeCols / 2)) * treeSpacing;
+            treeClone.position.set(x, -5, -500);
+            
+            // 给每棵树随机的旋转角度，避免看起来完全一样
+            treeClone.rotation.y = Math.random() * Math.PI * 2;
+            
+            treesGroup.add(treeClone);
+        }
     }, undefined, (error) => {
         console.error("Error loading tree:", error);
     });
@@ -1238,6 +1253,11 @@ const initGlobalBackground = () => {
         // 展台阵列按周期跟随相机循环（根据实际配置的产品数量自动计算周期宽度）
         const showcaseCycleWidth = Math.max(1, productList.length) * showcaseSpacing;
         showcaseGroup.position.x = Math.round(bgCamera.position.x / showcaseCycleWidth) * showcaseCycleWidth;
+
+        // 树木阵列按周期跟随相机循环
+        if (typeof treeCycleWidth !== 'undefined') {
+            treesGroup.position.x = Math.round(bgCamera.position.x / treeCycleWidth) * treeCycleWidth;
+        }
 
         // 动态判断当前位于视野中心的产品索引，控制视频按需播放
         const N = productList.length;
