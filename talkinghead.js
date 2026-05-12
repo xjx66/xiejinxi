@@ -313,14 +313,14 @@ const initGlobalBackground = () => {
     // --- 天窗竖井 (Skylight Shaft) ---
     // 深度盖住 5 盏灯的区域 (5 * 20.5 = 102.5)
     const shaftSizeZ = 102.5;
-    const shaftSizeX = 4000; // 横向无限宽
+    const shaftSizeX = 400000; // 横向物理尺寸拉到极大，不需要再代码里做平移补偿了
     const shaftHeight = 150; // 向上延伸 150 单位，制造深邃感
     const shaftGeo = new THREE.BoxGeometry(shaftSizeX, shaftHeight, shaftSizeZ);
     
     const shaftWallTex = textureLoader.load(AssetLibrary.textures.wall);
     shaftWallTex.wrapS = THREE.RepeatWrapping;
     shaftWallTex.wrapT = THREE.RepeatWrapping;
-    shaftWallTex.repeat.set(80, 4); // 调整纹理比例以适应超宽的 X 轴
+    shaftWallTex.repeat.set(8000, 4); // 保持纹理比例 400000 / 50 = 8000
     
     const shaftWallMat = new THREE.MeshStandardMaterial({
         color: 0xcccccc, // 调亮侧面墙壁颜色
@@ -1264,9 +1264,6 @@ const initGlobalBackground = () => {
         // 恢复地板瓷砖阵列和墙面板的 snap-shift，因为它们的随机 UV 现在基于世界绝对坐标计算，不会发生跳变了
         floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
         wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
-        shaftMesh.position.x = Math.round(bgCamera.position.x / cellSpacing) * cellSpacing;
-        // 抵消 shaftMesh 横向网格吸附造成的纹理平移，让纹理完美锚定在世界坐标系上
-        shaftWallTex.offset.x = shaftMesh.position.x / (4000 / 80);
         
         // 让天光也跟随相机横向移动，确保下方的树永远被照亮
         skylightDir.position.x = bgCamera.position.x;
