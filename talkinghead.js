@@ -30,8 +30,6 @@ export const AssetLibrary = {
         { name: "小侄子和小侄女的自拍", url: "./assets/paintings/selfies.jpeg", width: 9, height: 9 * (1181 / 1146), time: "202602", desc: "" }, // 缩小一倍，保持比例
         { name: "爷爷和我", url: "./assets/paintings/我和我爷爷.jpeg", width: 9, height: 9 * (1440 / 1080), time: "202407", desc: "雅安市人民医院" } // 3:4 竖向照片
     ],
-    // 4. 天窗中央的树
-    tree: './assets/tree/island_tree_01.glb',
     // 4. 数字人模型 (位于 /avatars/ 等目录)
     avatars: {
         bot1: 'brunette.glb',
@@ -355,34 +353,28 @@ const initGlobalBackground = () => {
     shaftMesh.position.set(0, 40 + shaftHeight / 2, -500);
     bgScene.add(shaftMesh);
 
-    // --- 天窗下方的树 (Tree at Skylight Center) ---
-    // 加载 GLB 模型并放置在天窗中心的正下方地板上 (Z = -500, Y = -5)
-    gltfLoader.load(AssetLibrary.tree, (gltf) => {
-        const treeMesh = gltf.scene;
-        // 地板高度是 -5
-        treeMesh.position.set(0, -5, -500);
+    // --- 在天窗中心下方种植一棵树 ---
+    // 树将放置在 Z=-500, X=0, 并且底部紧贴地板 (Y=-5)
+    const treeLoader = new GLTFLoader();
+    treeLoader.load('./assets/tree/island_tree_01_4k.gltf/island_tree_01_4k.gltf', (gltf) => {
+        const tree = gltf.scene;
+        // 地板高度是 -5，并且加上地板厚度一半大概就是 -5 的位置
+        tree.position.set(0, -5, -500);
+        // 根据树的模型初始大小可能需要缩放，这里先设置一个默认缩放比例，后续可调
+        tree.scale.set(10, 10, 10); 
         
-        // 自动计算包围盒并缩放树木，使其高度适配天花板 (45单位高)
-        const box = new THREE.Box3().setFromObject(treeMesh);
-        const size = box.getSize(new THREE.Vector3());
-        // 设定树的理想高度，比如 40，留点空隙
-        const targetHeight = 40;
-        const scale = targetHeight / size.y;
-        treeMesh.scale.set(scale, scale, scale);
-        
-        // 稍微随机旋转一下，让树看起来自然
-        treeMesh.rotation.y = Math.random() * Math.PI * 2;
-        
-        // 启用阴影
-        treeMesh.traverse((child) => {
+        // 开启阴影
+        tree.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+                // 如果树的材质偏暗，可以稍微增加一些自发光或者调整粗糙度
             }
         });
-        bgScene.add(treeMesh);
+        
+        bgScene.add(tree);
     }, undefined, (error) => {
-        console.warn("Skylight tree not loaded. Ensure you export the .blend file as .glb and place it at:", AssetLibrary.tree);
+        console.error("Error loading tree:", error);
     });
 
     // 原天花板网格已被灯阵列替代，保留地板的 GridHelper 即可
