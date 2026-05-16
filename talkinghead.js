@@ -73,7 +73,7 @@ const initGlobalBackground = () => {
     bgCanvas.style.width = '100%';
     bgCanvas.style.height = '100%';
     bgCanvas.style.zIndex = '-2'; // 放置在粒子背景(-1)的后面
-    bgCanvas.style.pointerEvents = 'none';
+    bgCanvas.style.pointerEvents = 'auto';
     document.body.prepend(bgCanvas);
 
     // 创建 3D 对象的 UI 标签容器
@@ -98,8 +98,10 @@ const initGlobalBackground = () => {
     bgRenderer.outputColorSpace = THREE.SRGBColorSpace;
     const bgScene = new THREE.Scene();
     bgScene.background = new THREE.Color(0x050505); // 将背景改为深色，配合远处的阴影衰减
-    // 使用深色线性雾气，模拟光线在远处的自然衰减，产生深邃的阴影感
-    bgScene.fog = new THREE.Fog(0x050505, 80, 1200); 
+    // 远景雾化会在动画循环里按“当前所在列”动态后移：
+    // 第一列时压到第二列，推进到第二列后再逐渐退到第三列。
+    const bgFog = new THREE.Fog(0x050505, 80, 1200);
+    bgScene.fog = bgFog;
 
     const bgCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 3000); // 增加相机视野深度
     bgCamera.position.set(0, 8, 40); 
@@ -111,6 +113,7 @@ const initGlobalBackground = () => {
     // 通过鼠标滚轮可让相机朝墙面"穿过模型"推进（z 减小）。
     // 范围由 wheel 事件中的 clamp 决定：[BG_Z_MIN, BG_Z_MAX]
     window.bgTargetPositionZ = bgCamera.position.z;
+    const BG_FOCUS_CAMERA_OFFSET_Z = 40; // 点击某一列物体时，让相机停在该物体前方约 40 个世界单位
 
     // --- 纯白无限方格空间 (The Construct) 构造 ---
     // [空间部位约定说明]: 
@@ -438,6 +441,7 @@ const initGlobalBackground = () => {
     // --- 在每个方形天窗中心下方种植一棵树 ---
     // 树放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
     const treesGroup = new THREE.Group();
+    const treeSelectables = [];
     bgScene.add(treesGroup);
 
     const treeWindUniforms = [];
@@ -538,11 +542,15 @@ const initGlobalBackground = () => {
             const treeClone = baseTree.clone();
             const x = (i - Math.floor(treeCols / 2)) * treeSpacing + SKYLIGHT_GRID_PHASE;
             treeClone.position.set(x, -5, SKYLIGHT_CENTER_Z);
+            treeClone.userData.selectableType = 'tree';
+            treeClone.userData.selectableFocusZ = SKYLIGHT_CENTER_Z + BG_FOCUS_CAMERA_OFFSET_Z;
+            treeClone.userData.selectableProjectOffset = new THREE.Vector3(0, 78, 0);
             
             // 给每棵树随机的旋转角度，避免看起来完全一样
             treeClone.rotation.y = Math.random() * Math.PI * 2;
             
             treesGroup.add(treeClone);
+            treeSelectables.push(treeClone);
         }
     }, undefined, (error) => {
         console.error("Error loading tree:", error);
@@ -751,6 +759,7 @@ const initGlobalBackground = () => {
     const paintingsData = AssetLibrary.paintings;
 
     const paintingsGroup = new THREE.Group();
+    const paintingSelectables = [];
     const paintingMats = [];
     const paintingSpacing = 30; // 与角色轮播的 X 轴偏移步长一致
 
@@ -828,11 +837,14 @@ const initGlobalBackground = () => {
             labelWorldOffset: new THREE.Vector3(0, labelYOffset, 0),
             loaderElement: loader.container,
             loaderText: loader.text,
-            getIsLoaded: template.getIsLoaded
+            getIsLoaded: template.getIsLoaded,
+            selectableType: 'painting',
+            selectableFocusZ: (-294.6 + wallPanelThickness) + BG_FOCUS_CAMERA_OFFSET_Z
         };
         window.bgLabels.push(paintingGroup);
 
         paintingsGroup.add(paintingGroup);
+        paintingSelectables.push(paintingGroup);
     }
     bgScene.add(paintingsGroup);
 
@@ -848,6 +860,7 @@ const initGlobalBackground = () => {
 
     // --- 悬浮产品展示 (Product Showcase) ---
     const showcaseGroup = new THREE.Group();
+    const productSelectables = [];
     const showcaseSpacing = 30; // 与角色/画作间距保持一致
     const showcaseCols = 70; 
     const halfShowcaseCols = Math.floor(showcaseCols / 2);
@@ -1122,7 +1135,10 @@ const initGlobalBackground = () => {
             itemContainer.add(new THREE.Mesh(hitBoxGeo, hitBoxMat));
         }
         
+        itemContainer.userData.selectableType = 'product';
+        itemContainer.userData.selectableFocusZ = z + BG_FOCUS_CAMERA_OFFSET_Z;
         showcaseGroup.add(itemContainer);
+        productSelectables.push(itemContainer);
         animatedShowcaseItems.push({
             mesh: itemContainer,
             baseY: baseItemY,
@@ -1143,6 +1159,147 @@ const initGlobalBackground = () => {
     let productPointerDownX = 0;
     let productPointerDownY = 0;
     let productPointerDownTime = 0;
+    let bgObjectPointerDownX = 0;
+    let bgObjectPointerDownY = 0;
+    let bgObjectPointerDownTime = 0;
+    const bgObjectSelectWorldPos = new THREE.Vector3();
+    const selectableProjectVec = new THREE.Vector3();
+    const selectableWorldPos = new THREE.Vector3();
+    let activeBackgroundSelectable = null;
+    let activeBackgroundSelectionOverlay = null;
+    const getDepthLayer = () => {
+        const targetZ = window.bgTargetPositionZ;
+        if (targetZ > -160) return 'product';
+        if (targetZ > -380) return 'painting';
+        return 'tree';
+    };
+    const getSelectionOverlayStyle = (type) => {
+        if (type === 'tree') {
+            return { color: 0xb8ffe6, opacity: 0.26, scale: 1.022 };
+        }
+        if (type === 'painting') {
+            return { color: 0xb9e6ff, opacity: 0.3, scale: 1.032 };
+        }
+        return { color: 0xaef3ff, opacity: 0.28, scale: 1.034 };
+    };
+    const copyLocalTransform = (source, target, scaleMultiplier = 1) => {
+        target.position.copy(source.position);
+        target.quaternion.copy(source.quaternion);
+        target.scale.copy(source.scale).multiplyScalar(scaleMultiplier);
+    };
+    const createOverlayMaterial = (sourceMaterial, style) => {
+        if (sourceMaterial && sourceMaterial.transparent && sourceMaterial.opacity === 0) return null;
+        return new THREE.MeshBasicMaterial({
+            color: style.color,
+            transparent: true,
+            opacity: style.opacity,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
+            toneMapped: false
+        });
+    };
+    const buildSelectionOverlayNode = (sourceNode, style) => {
+        let overlayNode = null;
+        if (sourceNode.isMesh && sourceNode.geometry) {
+            const sourceMaterials = Array.isArray(sourceNode.material) ? sourceNode.material : [sourceNode.material];
+            const overlayMaterials = sourceMaterials.map((material) => createOverlayMaterial(material, style)).filter(Boolean);
+            if (overlayMaterials.length === 0) return null;
+            overlayNode = new THREE.Mesh(
+                sourceNode.geometry,
+                Array.isArray(sourceNode.material) ? overlayMaterials : overlayMaterials[0]
+            );
+            overlayNode.renderOrder = 40;
+        } else {
+            overlayNode = new THREE.Group();
+        }
+
+        overlayNode.visible = sourceNode.visible !== false;
+        overlayNode.userData.selectionOverlay = true;
+        copyLocalTransform(sourceNode, overlayNode, sourceNode.isMesh ? style.scale : 1);
+
+        sourceNode.children.forEach((child) => {
+            const overlayChild = buildSelectionOverlayNode(child, style);
+            if (overlayChild) {
+                overlayNode.add(overlayChild);
+            }
+        });
+
+        return overlayNode;
+    };
+    const disposeSelectionOverlay = (overlayRoot) => {
+        if (!overlayRoot) return;
+        overlayRoot.traverse((node) => {
+            if (!node.isMesh) return;
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach((material) => {
+                if (material && typeof material.dispose === 'function') {
+                    material.dispose();
+                }
+            });
+        });
+    };
+    const clearActiveBackgroundSelectable = () => {
+        if (activeBackgroundSelectionOverlay && activeBackgroundSelectable) {
+            activeBackgroundSelectable.remove(activeBackgroundSelectionOverlay);
+        }
+        disposeSelectionOverlay(activeBackgroundSelectionOverlay);
+        activeBackgroundSelectionOverlay = null;
+        activeBackgroundSelectable = null;
+    };
+    const setActiveBackgroundSelectable = (object) => {
+        if (!object || !object.userData || !object.userData.selectableType) return;
+        if (activeBackgroundSelectable === object) return;
+        clearActiveBackgroundSelectable();
+        const style = getSelectionOverlayStyle(object.userData.selectableType);
+        const overlayRoot = new THREE.Group();
+        overlayRoot.name = 'selection-overlay-root';
+        overlayRoot.renderOrder = 40;
+        object.children.forEach((child) => {
+            const overlayChild = buildSelectionOverlayNode(child, style);
+            if (overlayChild) {
+                overlayRoot.add(overlayChild);
+            }
+        });
+        if (overlayRoot.children.length === 0) return;
+        object.add(overlayRoot);
+        activeBackgroundSelectable = object;
+        activeBackgroundSelectionOverlay = overlayRoot;
+    };
+    const toggleActiveBackgroundSelectable = (object) => {
+        if (!object || !object.userData || !object.userData.selectableType) return false;
+        if (activeBackgroundSelectable === object) {
+            clearActiveBackgroundSelectable();
+            return false;
+        }
+        setActiveBackgroundSelectable(object);
+        return true;
+    };
+    const findNearestSelectableCandidate = (selectables, clientX, clientY, maxDistancePx = 220) => {
+        let best = null;
+        let bestDistance = maxDistancePx;
+        selectables.forEach((obj) => {
+            selectableWorldPos.setFromMatrixPosition(obj.matrixWorld);
+            if (obj.userData && obj.userData.selectableProjectOffset) {
+                selectableWorldPos.add(obj.userData.selectableProjectOffset);
+            }
+            selectableProjectVec.copy(selectableWorldPos).project(bgCamera);
+            if (selectableProjectVec.z < -1 || selectableProjectVec.z > 1) return;
+            const screenX = (selectableProjectVec.x * 0.5 + 0.5) * window.innerWidth;
+            const screenY = (selectableProjectVec.y * -0.5 + 0.5) * window.innerHeight;
+            const distance = Math.hypot(screenX - clientX, screenY - clientY);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = obj;
+            }
+        });
+        return best ? { object: best, distance: bestDistance } : null;
+    };
+    const findNearestSelectable = (selectables, clientX, clientY, maxDistancePx = 220) => {
+        return findNearestSelectableCandidate(selectables, clientX, clientY, maxDistancePx)?.object || null;
+    };
 
     window.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return; // 只响应左键
@@ -1151,22 +1308,39 @@ const initGlobalBackground = () => {
         if (e.target.closest && (e.target.closest('button') || e.target.closest('input'))) {
             return;
         }
+        const isFrontTurntableTarget = e.target.closest && e.target.closest('#carousel-turntable');
+        const isInputTarget = e.target.closest && e.target.closest('#talkinghead-input-container');
+        if (isInputTarget || (isFrontTurntableTarget && window.bgTargetPositionZ > -50)) {
+            return;
+        }
+
+        bgObjectPointerDownX = e.clientX;
+        bgObjectPointerDownY = e.clientY;
+        bgObjectPointerDownTime = Date.now();
 
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, bgCamera);
 
         // 仅检测展示组内的物体
-        const intersects = raycaster.intersectObjects(showcaseGroup.children, true);
+        const depthLayer = getDepthLayer();
+        const intersects = depthLayer === 'product'
+            ? raycaster.intersectObjects(showcaseGroup.children, true)
+            : [];
 
+        let object = null;
         if (intersects.length > 0) {
             let intersectedMesh = intersects[0].object;
-
-            let object = intersectedMesh;
+            object = intersectedMesh;
             // 向上追溯到 itemContainer 层级
             while (object.parent && object.parent !== showcaseGroup) {
                 object = object.parent;
             }
+        } else if (depthLayer === 'product') {
+            object = findNearestSelectable(productSelectables, e.clientX, e.clientY);
+        }
+
+        if (object) {
             selectedProduct = object;
             isDraggingProduct = true;
             previousMousePosition = { x: e.clientX, y: e.clientY };
@@ -1181,6 +1355,81 @@ const initGlobalBackground = () => {
             e.stopImmediatePropagation();
         }
     }, { capture: true }); // 使用捕获阶段，抢在其他元素之前处理
+
+    window.addEventListener('pointerup', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest && (e.target.closest('button') || e.target.closest('input'))) {
+            return;
+        }
+        const isFrontTurntableTarget = e.target.closest && e.target.closest('#carousel-turntable');
+        const isInputTarget = e.target.closest && e.target.closest('#talkinghead-input-container');
+        if (isInputTarget || (isFrontTurntableTarget && window.bgTargetPositionZ > -50)) {
+            return;
+        }
+        if (isDraggingProduct || selectedProduct) {
+            return;
+        }
+
+        const dx = e.clientX - bgObjectPointerDownX;
+        const dy = e.clientY - bgObjectPointerDownY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const timeElapsed = Date.now() - bgObjectPointerDownTime;
+        if (distance >= 10 || timeElapsed >= 500) return;
+
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, bgCamera);
+
+        const depthLayer = getDepthLayer();
+        if (depthLayer === 'product') return;
+        const layerCandidates = depthLayer === 'painting'
+            ? [
+                { name: 'painting', roots: paintingsGroup.children, pool: paintingSelectables, maxDistancePx: 260 },
+                { name: 'tree', roots: treesGroup.children, pool: treeSelectables, maxDistancePx: 420 }
+            ]
+            : [
+                { name: 'tree', roots: treesGroup.children, pool: treeSelectables, maxDistancePx: 420 }
+            ];
+        const intersects = raycaster.intersectObjects([...layerCandidates[0].roots], true);
+        let object = null;
+        const resolvedCandidates = [];
+        for (const candidate of layerCandidates) {
+            const candidateIntersects = candidate === layerCandidates[0]
+                ? intersects
+                : raycaster.intersectObjects([...candidate.roots], true);
+            if (candidateIntersects.length > 0) {
+                object = candidateIntersects[0].object;
+                while (object.parent && object.parent !== paintingsGroup && object.parent !== treesGroup) {
+                    object = object.parent;
+                }
+                if (object && object.userData && object.userData.selectableType) {
+                    resolvedCandidates.push({ name: candidate.name, object, distance: 0 });
+                }
+            } else {
+                const nearest = findNearestSelectableCandidate(candidate.pool, e.clientX, e.clientY, candidate.maxDistancePx);
+                if (nearest && nearest.object && nearest.object.userData && nearest.object.userData.selectableType) {
+                    resolvedCandidates.push({ name: candidate.name, object: nearest.object, distance: nearest.distance });
+                }
+            }
+        }
+        if (resolvedCandidates.length > 0) {
+            const preferTreeDepth = window.bgTargetPositionZ <= -320;
+            resolvedCandidates.sort((a, b) => {
+                const scoreA = a.distance + (a.name === depthLayer ? 0 : 60) + (preferTreeDepth && a.name === 'tree' ? -90 : 0);
+                const scoreB = b.distance + (b.name === depthLayer ? 0 : 60) + (preferTreeDepth && b.name === 'tree' ? -90 : 0);
+                return scoreA - scoreB;
+            });
+            object = resolvedCandidates[0].object;
+        }
+        if (!object || !object.userData || !object.userData.selectableType) return;
+
+        object.getWorldPosition(bgObjectSelectWorldPos);
+        const isNowSelected = toggleActiveBackgroundSelectable(object);
+        if (!isNowSelected) return;
+        if (typeof window.focusBackgroundSlot === 'function') {
+            window.focusBackgroundSlot(bgObjectSelectWorldPos.x, object.userData.selectableFocusZ);
+        }
+    }, { capture: true });
 
     window.addEventListener('pointermove', (e) => {
         if (isDraggingProduct && selectedProduct) {
@@ -1211,6 +1460,7 @@ const initGlobalBackground = () => {
 
     const stopDragging = (e) => {
         if (isDraggingProduct) {
+            const clickedProduct = selectedProduct;
             const dx = e.clientX - productPointerDownX;
             const dy = e.clientY - productPointerDownY;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1222,11 +1472,20 @@ const initGlobalBackground = () => {
             e.preventDefault();
             e.stopImmediatePropagation();
 
-            // 如果是单击，触发轮播切换
+            // 鼠标左键不再负责角色横向切换；单击产品时仅结束当前拖拽态
             if (distance < 10 && timeElapsed < 500) {
-                if (window.handleCarouselClick) {
-                    window.handleCarouselClick(e.clientX);
+                if (clickedProduct && typeof window.focusBackgroundSlot === 'function') {
+                    clickedProduct.getWorldPosition(bgObjectSelectWorldPos);
+                    const isNowSelected = toggleActiveBackgroundSelectable(clickedProduct);
+                    if (!isNowSelected) return;
+                    window.focusBackgroundSlot(
+                        bgObjectSelectWorldPos.x,
+                        typeof clickedProduct.userData.selectableFocusZ === 'number'
+                            ? clickedProduct.userData.selectableFocusZ
+                            : -150 + BG_FOCUS_CAMERA_OFFSET_Z
+                    );
                 }
+                return;
             }
         }
     };
@@ -1266,14 +1525,6 @@ const initGlobalBackground = () => {
                 playVideoWithAudioFallback(video, activeProduct.keepAudio);
             } else {
                 video.pause();
-            }
-        } else if (e.code === 'ArrowLeft') {
-            // 快退 5 秒
-            video.currentTime = Math.max(0, video.currentTime - 5);
-        } else if (e.code === 'ArrowRight') {
-            // 快进 5 秒
-            if (video.duration) {
-                video.currentTime = Math.min(video.duration, video.currentTime + 5);
             }
         }
     });
@@ -1327,6 +1578,29 @@ const initGlobalBackground = () => {
         }
     };
 
+    const FOG_CAMERA_ANCHORS = [
+        { cameraZ: 40, fogTargetZ: -150 },                          // 第一列角色 -> 雾压到第二列产品
+        { cameraZ: -150, fogTargetZ: -294.6 + wallPanelThickness }, // 第二列产品 -> 雾退到第三列画作
+        { cameraZ: -294.6 + wallPanelThickness, fogTargetZ: SKYLIGHT_CENTER_Z },
+        { cameraZ: SKYLIGHT_CENTER_Z, fogTargetZ: -895 },
+        { cameraZ: -895, fogTargetZ: -895 }
+    ];
+    const getFogTargetZForCamera = (cameraZ) => {
+        if (cameraZ >= FOG_CAMERA_ANCHORS[0].cameraZ) return FOG_CAMERA_ANCHORS[0].fogTargetZ;
+        const lastAnchor = FOG_CAMERA_ANCHORS[FOG_CAMERA_ANCHORS.length - 1];
+        if (cameraZ <= lastAnchor.cameraZ) return lastAnchor.fogTargetZ;
+
+        for (let i = 0; i < FOG_CAMERA_ANCHORS.length - 1; i++) {
+            const from = FOG_CAMERA_ANCHORS[i];
+            const to = FOG_CAMERA_ANCHORS[i + 1];
+            if (cameraZ <= from.cameraZ && cameraZ >= to.cameraZ) {
+                const t = (cameraZ - from.cameraZ) / (to.cameraZ - from.cameraZ);
+                return THREE.MathUtils.lerp(from.fogTargetZ, to.fogTargetZ, t);
+            }
+        }
+        return lastAnchor.fogTargetZ;
+    };
+
     // 启动背景渲染动画循环
     window._lastActiveProductIndex = -1;
     const animateBg = () => {
@@ -1344,6 +1618,13 @@ const initGlobalBackground = () => {
         // 平滑过渡背景相机的 Z 轴推进（鼠标滚轮控制：向墙面"穿过模型"聚焦）
         bgCamera.position.z += (window.bgTargetPositionZ - bgCamera.position.z) * 0.08;
 
+        // 雾化边界跟着“当前所在列”后移，减少当前视角里同时出现过多层级的杂乱感。
+        const fogTargetZ = getFogTargetZForCamera(bgCamera.position.z);
+        const fogTargetDistance = Math.max(40, Math.abs(fogTargetZ - bgCamera.position.z));
+        // 轻一点的雾带：开始得更晚，衰减区更长，保留层次但减少“糊住”感。
+        bgFog.near = Math.max(20, fogTargetDistance - 20);
+        bgFog.far = fogTargetDistance + 240;
+
         // 让 DOM 角色跟随背景相机的 Z 轴推进做"穿过"特效：
         //   - 背景相机本身在独立的 bgScene 里，不会真的穿过角色（角色是 DOM 覆盖层）
         //   - 通过 CSS scale + opacity 模拟：相机越靠近墙，角色越大、越透明，最终消失
@@ -1352,6 +1633,7 @@ const initGlobalBackground = () => {
         const BG_FADE_RANGE = 100; // 相机沿 z 推进多少单位后角色完全消失
         const advance = 40 - bgCamera.position.z; // bgCamera 初始 z=40，advance>0 表示在向墙推进
         const fadeProgress = Math.max(0, Math.min(1, advance / BG_FADE_RANGE));
+        const isAtAvatarLayer = bgCamera.position.z > -50 && window.bgTargetPositionZ > -50;
 
         // 同步抬升相机视角高度：从原始 y=8 抬到墙面中心高度
         //   - fadeProgress 0 → 1 时 y 从 8 → wallCenterY，与"穿过角色"的过程同步
@@ -1386,8 +1668,8 @@ const initGlobalBackground = () => {
             //     不影响 items 之间的相对像素位置 → 与地板/产品/画作完全同步。
             turntableEl.style.transform = '';
             turntableEl.style.opacity = String(1 - fadeProgress);
-            // 完全淡出后关闭交互，避免拦截滚轮
-            turntableEl.style.pointerEvents = fadeProgress >= 1 ? 'none' : '';
+            // 一旦离开第一列角色层，立即关闭角色层点击，避免误拦截后方产品/画作/树
+            turntableEl.style.pointerEvents = isAtAvatarLayer && fadeProgress < 1 ? '' : 'none';
 
             // ⭐ 每帧把每个 carousel-item 的世界坐标投影到屏幕：
             //   - 用 THREE.Vector3(absX, 0, 0).project(bgCamera) 直接拿到 NDC，
@@ -1458,7 +1740,7 @@ const initGlobalBackground = () => {
         const inputContainer = document.getElementById('talkinghead-input-container');
         if (inputContainer && inputContainer.dataset.disabled !== "true") {
             inputContainer.style.opacity = String(1 - fadeProgress);
-            inputContainer.style.pointerEvents = fadeProgress >= 1 ? 'none' : 'auto';
+            inputContainer.style.pointerEvents = isAtAvatarLayer && fadeProgress < 1 ? 'auto' : 'none';
         }
         const loadingEl = document.getElementById('talkinghead-loading');
         if (loadingEl) {
@@ -1696,6 +1978,7 @@ const initGlobalBackground = () => {
         if (theme === 'light') {
             // 白天模式：白色格子，黑色线
             bgScene.background.setHex(0xffffff);
+            bgFog.color.setHex(0xffffff);
             
             // 地板：底板（缝隙）浅灰，瓷砖恢复为纯白底色让贴图正常呈现
             floorMat.color.setHex(0xdcdcdc);
@@ -1734,6 +2017,7 @@ const initGlobalBackground = () => {
         } else {
             // 夜间模式：黑色格子，白色线
             bgScene.background.setHex(0x020202);
+            bgFog.color.setHex(0x020202);
             
             // 地板：底板（缝隙）调暗，瓷砖也调成中灰让混凝土纹理仍可见
             floorMat.color.setHex(0x222222);
@@ -1803,6 +2087,20 @@ const initGlobalBackground = () => {
     //       拿不到事件。capture 阶段 window 总是最先触发，无法被子元素阻止。
     const BG_Z_MAX = 40;     // 默认远景位置（与 bgCamera 初始 z 一致）
     const BG_Z_MIN = -870;   // 接近墙面（墙在 z = -895），保留一点余量避免穿模
+    window.focusBackgroundSlot = (targetX, targetZ) => {
+        if (typeof targetX === 'number' && Number.isFinite(targetX)) {
+            window.bgTargetPositionX = targetX;
+        }
+        if (typeof targetZ === 'number' && Number.isFinite(targetZ)) {
+            window.bgTargetPositionZ = Math.min(BG_Z_MAX, Math.max(BG_Z_MIN, targetZ));
+        }
+        if (window.bgTargetPositionZ > -50) {
+            clearActiveBackgroundSelectable();
+        }
+        if (typeof window.resetAutoRotateTimer === 'function') {
+            window.resetAutoRotateTimer();
+        }
+    };
     
     // ⚙️ 滚轮移动距离设置
     // 修改这个值可以调整每次拨动鼠标滚轮时，相机向前或向后移动的距离
@@ -2114,6 +2412,29 @@ document.addEventListener('DOMContentLoaded', async function(e) {
                 if (!item.dataset.tx) item.dataset.tx = '0';
             });
         };
+        let activeAvatarSelectable = null;
+        const clearActiveAvatarSelectable = () => {
+            if (activeAvatarSelectable) {
+                activeAvatarSelectable.classList.remove('selected');
+            }
+            activeAvatarSelectable = null;
+        };
+        const setActiveAvatarSelectable = (item) => {
+            if (!item) return;
+            if (activeAvatarSelectable === item) return;
+            clearActiveAvatarSelectable();
+            item.classList.add('selected');
+            activeAvatarSelectable = item;
+        };
+        const toggleActiveAvatarSelectable = (item) => {
+            if (!item) return false;
+            if (activeAvatarSelectable === item) {
+                clearActiveAvatarSelectable();
+                return false;
+            }
+            setActiveAvatarSelectable(item);
+            return true;
+        };
 
         const switchModel = (newIndex) => {
             let diff = newIndex - activeIndex;
@@ -2121,6 +2442,7 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             if (newIndex < 0) newIndex = models.length - 1;
             if (newIndex >= models.length) newIndex = 0;
             if (activeIndex === newIndex) return;
+            clearActiveAvatarSelectable();
 
             // 处理循环情况的旋转方向差值 (保持向近距离旋转)
             if (diff > models.length / 2) diff -= models.length;
@@ -2193,53 +2515,21 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             }
         };
 
-        // 将单击切换逻辑暴露到全局，供 product 拦截后调用
-        window.handleCarouselClick = (clientX) => {
-            const rect = turntable.getBoundingClientRect();
-            const clickX = clientX - rect.left;
-            const centerX = rect.width / 2;
-
-            if (clickX < centerX) {
-                switchModel(activeIndex - 1); // 点左半屏，往左移
-            } else {
-                switchModel(activeIndex + 1); // 点右半屏，往右移
-            }
-        };
-
-        let pointerDownX = 0;
-        let pointerDownY = 0;
-        let pointerDownTime = 0;
-
-        // 记录鼠标按下的初始位置和时间
-        turntable.addEventListener('pointerdown', (e) => {
-            if (e.button === 2) return; // 忽略右键点击，留给画板涂鸦
-            pointerDownX = e.clientX;
-            pointerDownY = e.clientY;
-            pointerDownTime = Date.now();
-            // 注意：这里不拦截 pointerdown，让事件正常传递给底层的 Canvas，以便支持长按拖拽旋转
-        }, true);
-
-        // 在鼠标抬起时，判断是“单次点击”还是“拖拽旋转”
-        turntable.addEventListener('pointerup', (e) => {
-            if (e.button === 2) return; // 忽略右键点击，留给画板涂鸦
-            
-            // 如果点击的是输入框或按钮等控件，直接放行
-            if (e.target.closest('input') || e.target.closest('button')) {
+        // 键盘左右键负责角色横向切换；鼠标左键不再参与该交互
+        window.addEventListener('keydown', (e) => {
+            // 输入态不拦截，避免影响对话框输入
+            if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'textarea') {
                 return;
             }
 
-            const dx = e.clientX - pointerDownX;
-            const dy = e.clientY - pointerDownY;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const timeElapsed = Date.now() - pointerDownTime;
-
-            // 区分单次点击和拖拽/长按：
-            // 如果鼠标移动距离小于 10 像素，并且按下的时间小于 500 毫秒，则认为是“点击”
-            if (distance < 10 && timeElapsed < 500) {
-                window.handleCarouselClick(e.clientX);
+            if (e.code === 'ArrowLeft') {
+                e.preventDefault();
+                switchModel(activeIndex - 1);
+            } else if (e.code === 'ArrowRight') {
+                e.preventDefault();
+                switchModel(activeIndex + 1);
             }
-            // 如果是拖拽（距离大）或长按（时间长），则什么也不做，让底层 Canvas 去处理旋转
-        }, true);
+        });
 
         // 5秒无操作自动向左轮换 (模型整体向左平移，即选中右侧的下一个模型 activeIndex + 1)
         let autoRotateTimer = null;
@@ -2325,6 +2615,22 @@ document.addEventListener('DOMContentLoaded', async function(e) {
             }
             
             item.appendChild(tag);
+            item.addEventListener('click', (evt) => {
+                if (evt.button !== 0) return;
+                if (window.bgTargetPositionZ <= -50) return;
+                evt.preventDefault();
+                evt.stopPropagation();
+                const isNowSelected = toggleActiveAvatarSelectable(item);
+                if (!isNowSelected) return;
+                switchModel(i);
+                setActiveAvatarSelectable(item);
+                if (typeof window.focusBackgroundSlot === 'function') {
+                    const targetAbsX = parseFloat(item.dataset.absX);
+                    if (Number.isFinite(targetAbsX)) {
+                        window.focusBackgroundSlot(targetAbsX, 40);
+                    }
+                }
+            });
 
             // 创建加载状态转圈动画及进度文本
             const loaderContainer = document.createElement('div');

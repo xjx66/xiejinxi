@@ -475,6 +475,26 @@ html {
     filter: brightness(1);
 }
 
+.carousel-item canvas {
+    transition: filter 0.25s ease, opacity 0.25s ease;
+}
+
+.carousel-item.selected canvas {
+    filter: saturate(1.28) brightness(1.16) drop-shadow(0 0 26px rgba(115, 236, 255, 0.62));
+}
+
+[data-theme="light"] .carousel-item.selected canvas {
+    filter: saturate(1.18) brightness(1.08) drop-shadow(0 0 18px rgba(40, 140, 200, 0.38));
+}
+
+.carousel-item.selected .avatar-tag {
+    color: #f2feff;
+}
+
+[data-theme="light"] .carousel-item.selected .avatar-tag {
+    color: #0a5470;
+}
+
 /* Avatar Tag Styles */
 .avatar-tag {
     position: absolute;
