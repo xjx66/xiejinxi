@@ -2,6 +2,7 @@ import { TalkingHead } from "talkinghead";
 import { HeadTTS } from "headtts";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 
 // =======================================================================
 // 📂 资产库配置 (Asset Library)
@@ -12,7 +13,8 @@ export const AssetLibrary = {
     // 1. 材质贴图 (放入 assets/textures/ 目录)
     textures: {
         ground: './assets/textures/ground-texture.jpg',
-        wall: './assets/textures/wall-texture.jpg'
+        wall: './assets/textures/wall-texture.jpg',
+        skylightHdr: './assets/textures/qwantani_dusk_2_puresky_8k.hdr'
     },
     // 2. 展台产品模型 (放入 assets/products/ 目录)
     // 采用数组形式，支持按顺序循环加载多个产品。可以为每个产品指定不同的尺寸 (targetSize)
@@ -103,6 +105,7 @@ const initGlobalBackground = () => {
     bgCamera.position.set(0, 8, 40); 
     bgCamera.lookAt(0, 8, -900); // 调整相机朝向，使其看向深度900的墙面
 
+    window.bgCamera = bgCamera; // 暴露给轮播逻辑，用于换算 30 世界单位对应的屏幕像素
     window.bgTargetPositionX = 0;
     // 背景相机 Z 轴目标位置：默认初始 z = 40（看向墙的远景），
     // 通过鼠标滚轮可让相机朝墙面"穿过模型"推进（z 减小）。
@@ -217,7 +220,18 @@ const initGlobalBackground = () => {
     // const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
 
     // 2. 天花板 (Ceiling)
-    // --- 天窗 Shader 插件 (用于掏空 Z=-500 的区域) ---
+    // --- 方形天窗参数 ---
+    const SKYLIGHT_GRID_PHASE = cellSpacing * 0.5; // ceil light 的 cell center 相位（边缘则落在整数个 cellSpacing 上）
+    const SKYLIGHT_PERIOD_CELLS = 10; // 天窗中心间距 = 10 个 ceiling cells
+    const SKYLIGHT_PERIOD_X = SKYLIGHT_PERIOD_CELLS * cellSpacing;
+    const SKYLIGHT_TARGET_Z = -500;
+    const SKYLIGHT_GRID_CELLS = 5;   // 基础尺寸：5 个 ceiling cells
+    const SKYLIGHT_EDGE_EXPAND = cellSpacing * 0.5; // 在当前边界基础上四边各向外再扩半个格子
+    const SKYLIGHT_OPENING_SIZE = SKYLIGHT_GRID_CELLS * cellSpacing + SKYLIGHT_EDGE_EXPAND * 2;
+    const SKYLIGHT_HALF_OPENING = SKYLIGHT_OPENING_SIZE * 0.5;
+    const SKYLIGHT_CENTER_Z = Math.round((SKYLIGHT_TARGET_Z - SKYLIGHT_GRID_PHASE) / cellSpacing) * cellSpacing + SKYLIGHT_GRID_PHASE;
+
+    // --- 天窗 Shader 插件（将原来的贯穿天窗改成按固定节距重复的方形开孔） ---
     const skylightShaderPlugin = (shader) => {
         shader.vertexShader = `
             varying vec3 vWorldPos;
@@ -234,11 +248,16 @@ const initGlobalBackground = () => {
         );
         shader.fragmentShader = `
             varying vec3 vWorldPos;
+            float centeredRepeat(float value, float period) {
+                return mod(value + period * 0.5, period) - period * 0.5;
+            }
         ` + shader.fragmentShader;
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <clipping_planes_fragment>',
             `#include <clipping_planes_fragment>
-            if (vWorldPos.z > -551.2 && vWorldPos.z < -448.8) {
+            float skylightLocalX = centeredRepeat(vWorldPos.x - (${SKYLIGHT_GRID_PHASE.toFixed(1)}), ${SKYLIGHT_PERIOD_X.toFixed(1)});
+            float skylightLocalZ = vWorldPos.z - (${SKYLIGHT_CENTER_Z.toFixed(1)});
+            if (abs(skylightLocalX) < ${SKYLIGHT_HALF_OPENING.toFixed(1)} && abs(skylightLocalZ) < ${SKYLIGHT_HALF_OPENING.toFixed(1)}) {
                 discard;
             }`
         );
@@ -310,35 +329,70 @@ const initGlobalBackground = () => {
     }
     bgScene.add(ceilLights);
 
-    // --- 天窗竖井 (Skylight Shaft) ---
-    // 深度盖住 5 盏灯的区域 (5 * 20.5 = 102.5)
-    const shaftSizeZ = 102.5;
-    const shaftSizeX = 400000; // 横向物理尺寸拉到极大，不需要再代码里做平移补偿了
-    const shaftHeight = 150; // 向上延伸 150 单位，制造深邃感
+    // --- 天窗竖井 / 树阵列参数 ---
+    const treeSpacing = SKYLIGHT_PERIOD_X; // 树与树之间的横向间距，严格对齐天窗周期
+    const treeCols = 25; // 覆盖横向视野
+    const treeCycleWidth = treeCols * treeSpacing;
+
+    // --- 方形天窗浅槽 / 屋面 / 天空 ---
+    const shaftSizeX = SKYLIGHT_OPENING_SIZE;
+    const shaftSizeZ = SKYLIGHT_OPENING_SIZE;
+    const shaftHeight = 15; // 改成接近楼板厚度的浅槽，不再做深竖井
+    const skylightSkyOffsetY = 24; // 在屋面上方抬一层天空平面，透过开口可见
     const shaftGeo = new THREE.BoxGeometry(shaftSizeX, shaftHeight, shaftSizeZ);
     
     const shaftWallTex = textureLoader.load(AssetLibrary.textures.wall);
     shaftWallTex.wrapS = THREE.RepeatWrapping;
     shaftWallTex.wrapT = THREE.RepeatWrapping;
-    shaftWallTex.repeat.set(8000, 4); // 保持纹理比例 400000 / 50 = 8000
+    shaftWallTex.repeat.set(1.4, 1.2);
     
     const shaftWallMat = new THREE.MeshStandardMaterial({
-        color: 0xcccccc, // 调亮侧面墙壁颜色
-        emissive: 0x333333, // 增加少许自发光，确保内部不那么死黑
-        emissiveIntensity: 1.0,
+        color: 0xffffff,
         map: shaftWallTex,
+        emissive: 0xffffff,
+        emissiveMap: shaftWallTex,
+        emissiveIntensity: 1.2,
         roughness: 0.9,
         side: THREE.BackSide // 从内部看
     });
     
-    const shaftTopMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xccddee, // 偏冷的自然天光
-        emissiveIntensity: 2.0,
-        side: THREE.BackSide
-    });
-    
+    const shaftTopMat = new THREE.MeshBasicMaterial({ visible: false });
     const shaftBottomMat = new THREE.MeshBasicMaterial({ visible: false });
+
+
+    const skylightRoofMat = new THREE.MeshStandardMaterial({
+        color: 0xcfd6db,
+        emissive: 0x000000,
+        emissiveIntensity: 0,
+        roughness: 0.96,
+        metalness: 0.02,
+        side: THREE.DoubleSide
+    });
+    skylightRoofMat.onBeforeCompile = skylightShaderPlugin;
+    skylightRoofMat.needsUpdate = true;
+
+    const skylightRoof = new THREE.Mesh(ceilGeo, skylightRoofMat);
+    skylightRoof.rotation.x = Math.PI / 2;
+    skylightRoof.position.y = 40 + shaftHeight;
+    bgScene.add(skylightRoof);
+
+    const skylightSkyRadius = 2200;
+    const skylightSkyCenterY = 40 + shaftHeight + 1400;
+    const skylightSkyGeo = new THREE.SphereGeometry(skylightSkyRadius, 48, 24);
+    const skylightSkyMat = new THREE.MeshBasicMaterial({
+        color: 0x9fd4ff,
+        side: THREE.BackSide,
+        fog: false
+    });
+    const skylightSky = new THREE.Mesh(skylightSkyGeo, skylightSkyMat);
+    skylightSky.position.set(0, skylightSkyCenterY, SKYLIGHT_CENTER_Z);
+    bgScene.add(skylightSky);
+
+    new RGBELoader().load(AssetLibrary.textures.skylightHdr, (hdrTexture) => {
+        hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+        skylightSkyMat.map = hdrTexture;
+        skylightSkyMat.needsUpdate = true;
+    });
     
     // BoxGeometry 面顺序：[+x, -x, +y(顶), -y(底), +z, -z]
     const shaftMats = [
@@ -350,20 +404,26 @@ const initGlobalBackground = () => {
         shaftWallMat    // -z
     ];
     
-    const shaftMesh = new THREE.Mesh(shaftGeo, shaftMats);
-    // 放置在 z=-500, y = 天花板(40) + 竖井高度一半
-    shaftMesh.position.set(0, 40 + shaftHeight / 2, -500);
-    bgScene.add(shaftMesh);
+    const skylightShaftsGroup = new THREE.Group();
+    for (let i = 0; i < treeCols; i++) {
+        const shaftMesh = new THREE.Mesh(shaftGeo, shaftMats);
+        const x = (i - Math.floor(treeCols / 2)) * treeSpacing + SKYLIGHT_GRID_PHASE;
+        shaftMesh.position.set(x, 40 + shaftHeight / 2, SKYLIGHT_CENTER_Z);
+        skylightShaftsGroup.add(shaftMesh);
+    }
+    bgScene.add(skylightShaftsGroup);
 
     // --- 天窗顶部聚光灯 ---
-    // 模拟从天井洒下的强烈自然光，照亮下方的森林。使用 SpotLight 限制光照范围，避免影响全局
+    // 光源抬到屋面上方，让视觉上更像自然天光从室外洒下
+    const skylightLightDayY = 40 + shaftHeight + skylightSkyOffsetY - 4;
+    const skylightLightNightY = skylightLightDayY + 50;
     const skylightDir = new THREE.SpotLight(0xffeedd, 50000.0); // 暖白强光，SpotLight 遵循物理衰减，需要极高强度
-    skylightDir.position.set(0, 40 + shaftHeight, -500); // 放在天井最顶部
-    skylightDir.target.position.set(0, -5, -500); // 指向地板上的树
-    skylightDir.angle = Math.PI / 4; // 光锥角度
-    skylightDir.penumbra = 0.5; // 边缘柔和过渡
+    skylightDir.position.set(0, skylightLightNightY, SKYLIGHT_CENTER_Z);
+    skylightDir.target.position.set(0, -5, SKYLIGHT_CENTER_Z); // 指向地板上的树
+    skylightDir.angle = Math.PI / 6.2; // 更聚焦，匹配方形天窗
+    skylightDir.penumbra = 0.65; // 边缘柔和过渡
     skylightDir.decay = 2.0; // 物理衰减
-    skylightDir.distance = 400; // 最大照射距离
+    skylightDir.distance = 320; // 最大照射距离
     
     // 配置高精度阴影
     skylightDir.castShadow = true;
@@ -375,15 +435,67 @@ const initGlobalBackground = () => {
     bgScene.add(skylightDir);
     bgScene.add(skylightDir.target);
 
-    // --- 在天窗中心下方种植一棵树 ---
-    // 树将放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
+    // --- 在每个方形天窗中心下方种植一棵树 ---
+    // 树放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
     const treesGroup = new THREE.Group();
     bgScene.add(treesGroup);
-    
-    // 树的轮播配置
-    const treeSpacing = 210; // 树与树之间的横向间距
-    const treeCols = 25; // 确保覆盖横向视野
-    const treeCycleWidth = treeCols * treeSpacing;
+
+    const treeWindUniforms = [];
+    const configureTreeWindMaterial = (material, mesh, options = {}) => {
+        if (!material || material.userData.treeWindConfigured) return;
+
+        const {
+            amp = 0.22,
+            flutter = 0.05,
+            minWeight = 0.18,
+            weightStart = 0.02
+        } = options;
+
+        const geometry = mesh.geometry;
+        if (geometry && !geometry.boundingBox) {
+            geometry.computeBoundingBox();
+        }
+        const bbox = geometry && geometry.boundingBox;
+        const windMinY = bbox ? bbox.min.y : 0;
+        const windHeight = bbox ? Math.max(0.001, bbox.max.y - bbox.min.y) : 1;
+        const shaderMinWeight = minWeight.toFixed(3);
+        const shaderWeightStart = weightStart.toFixed(3);
+
+        material.onBeforeCompile = (shader) => {
+            shader.uniforms.uTreeWindTime = { value: 0 };
+            shader.uniforms.uTreeWindMinY = { value: windMinY };
+            shader.uniforms.uTreeWindHeight = { value: windHeight };
+            shader.uniforms.uTreeWindAmp = { value: amp };
+            shader.uniforms.uTreeWindFlutter = { value: flutter };
+
+            shader.vertexShader = `
+                uniform float uTreeWindTime;
+                uniform float uTreeWindMinY;
+                uniform float uTreeWindHeight;
+                uniform float uTreeWindAmp;
+                uniform float uTreeWindFlutter;
+            ` + shader.vertexShader;
+
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `#include <begin_vertex>
+                 float windHeight01 = clamp((transformed.y - uTreeWindMinY) / uTreeWindHeight, 0.0, 1.0);
+                 float windWeight = mix(${shaderMinWeight}, 1.0, smoothstep(${shaderWeightStart}, 1.0, windHeight01));
+                 vec4 windWorldAnchor = modelMatrix * vec4(transformed, 1.0);
+                 float windPhase = uTreeWindTime * 0.85 + windWorldAnchor.x * 0.045 + windWorldAnchor.z * 0.035;
+                 float sway = sin(windPhase) + 0.5 * sin(windPhase * 1.7 + 1.3);
+                 float flutter = sin(uTreeWindTime * 3.8 + transformed.x * 1.4 + transformed.y * 0.65);
+                 transformed.x += (sway * uTreeWindAmp + flutter * uTreeWindFlutter) * windWeight * windWeight;
+                 transformed.z += cos(windPhase * 1.15) * uTreeWindAmp * 0.45 * windWeight;
+                `
+            );
+
+            treeWindUniforms.push(shader.uniforms.uTreeWindTime);
+        };
+
+        material.userData.treeWindConfigured = true;
+        material.needsUpdate = true;
+    };
 
     const treeLoader = new GLTFLoader();
     treeLoader.load('./assets/tree/island_tree_01_4k.gltf/island_tree_01_4k.gltf', (gltf) => {
@@ -396,14 +508,36 @@ const initGlobalBackground = () => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.forEach((material) => {
+                    if (!material || typeof material.name !== 'string') return;
+
+                    const materialName = material.name.toLowerCase();
+                    if (materialName.includes('leaves')) {
+                        configureTreeWindMaterial(material, child, {
+                            amp: 0.22,
+                            flutter: 0.05,
+                            minWeight: 0.18,
+                            weightStart: 0.02
+                        });
+                    } else if (materialName.includes('branches')) {
+                        configureTreeWindMaterial(material, child, {
+                            amp: 0.035,
+                            flutter: 0.008,
+                            minWeight: 0.0,
+                            weightStart: 0.28
+                        });
+                    }
+                });
             }
         });
         
         // 克隆并生成森林阵列
         for (let i = 0; i < treeCols; i++) {
             const treeClone = baseTree.clone();
-            const x = (i - Math.floor(treeCols / 2)) * treeSpacing;
-            treeClone.position.set(x, -5, -500);
+            const x = (i - Math.floor(treeCols / 2)) * treeSpacing + SKYLIGHT_GRID_PHASE;
+            treeClone.position.set(x, -5, SKYLIGHT_CENTER_Z);
             
             // 给每棵树随机的旋转角度，避免看起来完全一样
             treeClone.rotation.y = Math.random() * Math.PI * 2;
@@ -1198,8 +1332,15 @@ const initGlobalBackground = () => {
     const animateBg = () => {
         requestAnimationFrame(animateBg);
         
-        // 平滑过渡背景相机的 X 轴平移
-        bgCamera.position.x += (window.bgTargetPositionX - bgCamera.position.x) * 0.08;
+        // 平滑过渡背景相机的 X 轴平移：接近目标时吸附到目标，消除 lerp 永远追不上的残余抖动
+        {
+            const diff = window.bgTargetPositionX - bgCamera.position.x;
+            if (Math.abs(diff) < 0.01) {
+                bgCamera.position.x = window.bgTargetPositionX;
+            } else {
+                bgCamera.position.x += diff * 0.08;
+            }
+        }
         // 平滑过渡背景相机的 Z 轴推进（鼠标滚轮控制：向墙面"穿过模型"聚焦）
         bgCamera.position.z += (window.bgTargetPositionZ - bgCamera.position.z) * 0.08;
 
@@ -1226,10 +1367,91 @@ const initGlobalBackground = () => {
         if (turntableEl) {
             // 角色边变大边淡出：scale 1 → 4，opacity 1 → 0
             const carouselScale = 1 + fadeProgress * 3;
-            turntableEl.style.transform = `scale(${carouselScale})`;
+            const CAROUSEL_PROJECTION_Z_MIN = 14; // DOM 角色投影始终停留在角色前方，避免穿越 z=0 时透视塌缩
+            const carouselProjectionZ = Math.max(bgCamera.position.z, CAROUSEL_PROJECTION_Z_MIN);
+            const carouselProjectCamera = window._carouselProjectCamera || (window._carouselProjectCamera = new THREE.PerspectiveCamera(bgCamera.fov, bgCamera.aspect, bgCamera.near, bgCamera.far));
+            carouselProjectCamera.fov = bgCamera.fov;
+            carouselProjectCamera.aspect = bgCamera.aspect;
+            carouselProjectCamera.near = bgCamera.near;
+            carouselProjectCamera.far = bgCamera.far;
+            carouselProjectCamera.position.set(bgCamera.position.x, currentY, carouselProjectionZ);
+            carouselProjectCamera.lookAt(bgCamera.position.x, currentY, -900);
+            carouselProjectCamera.updateProjectionMatrix();
+            carouselProjectCamera.updateMatrixWorld(true);
+
+            // ⭐ 容器只做 opacity，不再 scale。
+            //   - 容器 scale 会把 items 的 tx 一并放大，导致滚轮推近时 tx*scale
+            //     远超过 project() 算出的精确像素 → 视觉上左右晃动。
+            //   - 把 carouselScale 下放到每个 item 的 scale 上，仅放大角色本体，
+            //     不影响 items 之间的相对像素位置 → 与地板/产品/画作完全同步。
+            turntableEl.style.transform = '';
             turntableEl.style.opacity = String(1 - fadeProgress);
             // 完全淡出后关闭交互，避免拦截滚轮
             turntableEl.style.pointerEvents = fadeProgress >= 1 ? 'none' : '';
+
+            // ⭐ 每帧把每个 carousel-item 的世界坐标投影到屏幕：
+            //   - 用 THREE.Vector3(absX, 0, 0).project(bgCamera) 直接拿到 NDC，
+            //     不再手算 pxPerUnit。这样无论相机 lookAt 倾斜、Z 推近、Y 抬升，
+            //     DOM 角色都精确钉在 3D 世界点 (absX, 0, 0) 上 → 与地板完全相对静止。
+            //   - 当 |absX - camX| 超出 ±N/2 步长 → absX ± N*WORLD_STEP wrap 到对侧（屏外完成）
+            //   - active 由"最接近镜头中线"派生，避免切换瞬间的视觉跳变
+            const items = turntableEl.querySelectorAll('.carousel-item');
+            const N = items.length;
+            const halfRange = (N / 2) * 30; // WORLD_STEP=30
+            const winW = window.innerWidth;
+            const centerX = winW * 0.5;
+            const _projectVec = window._carouselProjectVec || (window._carouselProjectVec = new THREE.Vector3());
+
+            let bestItem = null;
+            let bestAbsTx = Infinity;
+            items.forEach((item) => {
+                let absX = parseFloat(item.dataset.absX) || 0;
+                const camX = bgCamera.position.x;
+                // 屏外 wrap：右侧滑出 → 跳到左侧；左侧滑出 → 跳到右侧
+                while (absX - camX > halfRange) absX -= N * 30;
+                while (absX - camX < -halfRange) absX += N * 30;
+                item.dataset.absX = String(absX);
+
+                // 用 Three.js project：把 (absX, 0, 0) 这个 3D 锚点投影到屏幕
+                _projectVec.set(absX, 0, 0).project(carouselProjectCamera);
+                const screenX = (_projectVec.x * 0.5 + 0.5) * winW;
+                // turntable 容器在 CSS 中居中 → tx 是相对中心的偏移
+                const tx = screenX - centerX;
+
+                const ty = parseFloat(item.dataset.ty) || 0;
+                // distance：以"屏幕水平距离"派生 → 镜头正中为 active
+                const distNorm = Math.abs(absX - camX) / 30; // 距中线多少个 step
+                const intDist = Math.round(distNorm);
+                // 推近时把"角色变大"的特效转移到每个 item 上（容器不再 scale）
+                const scale = 0.85 * carouselScale;
+                const zIndex = intDist === 0 ? 10 : 5 - intDist;
+                let brightness = 1.0;
+                if (intDist === 1) brightness = 0.8;
+                else if (intDist >= 2) brightness = 0.3;
+
+                // ⭐ 关掉 items 所有的 CSS transition：
+                //   - 我们每帧 60fps 用 JS 写入新 transform，平滑由相机驱动
+                //   - CSS 默认的 transition: transform 0.6s 会试图"动画到新位置"，
+                //     与逐帧覆盖叠加产生"轻微位移漂移 + 黑影闪过"两个 Bug
+                if (item.style.transition !== 'none') {
+                    item.style.transition = 'none';
+                }
+
+                item.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+                item.style.zIndex = String(zIndex);
+                item.style.filter = `brightness(${brightness})`;
+                item.dataset.tx = String(tx);
+
+                if (Math.abs(tx) < bestAbsTx) {
+                    bestAbsTx = Math.abs(tx);
+                    bestItem = item;
+                }
+            });
+            // 派生 active：最接近中线者
+            items.forEach((item) => {
+                if (item === bestItem) item.classList.add('active');
+                else item.classList.remove('active');
+            });
         }
 
         // 聊天输入框跟随角色一起淡出
@@ -1251,9 +1473,17 @@ const initGlobalBackground = () => {
             }
         });
 
+        // 树叶风摆：只更新叶片材质的时间 uniform，不影响树干/枝干材质
+        const treeWindTime = performance.now() * 0.001;
+        treeWindUniforms.forEach((timeUniform) => {
+            timeUniform.value = treeWindTime;
+        });
+
         // 1. 让天、地、墙直接跟随相机 X 轴移动，所以它们相对相机永远静止且无限延伸
         floor.position.x = bgCamera.position.x;
         ceil.position.x = bgCamera.position.x;
+        skylightRoof.position.x = bgCamera.position.x;
+        skylightSky.position.x = bgCamera.position.x;
         wall.position.x = bgCamera.position.x;
 
         // 2. 网格单格尺寸是 4000/160 = 25。将其吸附到 25 的整数倍
@@ -1265,9 +1495,10 @@ const initGlobalBackground = () => {
         floorTiles.position.x = Math.round(bgCamera.position.x / floorTileSpacing) * floorTileSpacing;
         wallPanels.position.x = Math.round(bgCamera.position.x / wallPanelSpacing) * wallPanelSpacing;
         
-        // 让天光也跟随相机横向移动，确保下方的树永远被照亮
-        skylightDir.position.x = bgCamera.position.x;
-        skylightDir.target.position.x = bgCamera.position.x;
+        // 方形天窗的聚光吸附到最近一个天窗中心，避免连续跟随时偏离开孔
+        const activeSkylightX = Math.round((bgCamera.position.x - SKYLIGHT_GRID_PHASE) / treeSpacing) * treeSpacing + SKYLIGHT_GRID_PHASE;
+        skylightDir.position.x = activeSkylightX;
+        skylightDir.target.position.x = activeSkylightX;
         
         // 让画作阵列按周期跟随相机循环（共 7 幅画，周期宽度 210）
         // 因为现在画作阵列已经铺满了 4000 单位，当整体平移 210 单位时，
@@ -1279,9 +1510,11 @@ const initGlobalBackground = () => {
         const showcaseCycleWidth = Math.max(1, productList.length) * showcaseSpacing;
         showcaseGroup.position.x = Math.round(bgCamera.position.x / showcaseCycleWidth) * showcaseCycleWidth;
 
-        // 树木阵列按周期跟随相机循环
+        // 方形天窗竖井与树木阵列按同一周期跟随相机循环，始终一一对齐
         if (typeof treeCycleWidth !== 'undefined') {
-            treesGroup.position.x = Math.round(bgCamera.position.x / treeCycleWidth) * treeCycleWidth;
+            const skylightCycleOffsetX = Math.round(bgCamera.position.x / treeCycleWidth) * treeCycleWidth;
+            skylightShaftsGroup.position.x = skylightCycleOffsetX;
+            treesGroup.position.x = skylightCycleOffsetX;
         }
 
         // 动态判断当前位于视野中心的产品索引，控制视频按需播放
@@ -1473,6 +1706,15 @@ const initGlobalBackground = () => {
             ceilMat.color.setHex(0xdcdcdc); // 恢复浅灰背板（缝隙颜色）
             ceilMat.emissive.setHex(0x000000);
             ceilMat.emissiveIntensity = 0;
+            shaftWallMat.color.setHex(0xffffff);
+            shaftWallMat.emissive.setHex(0xffffff);
+            shaftWallMat.emissiveIntensity = 0.45;
+            skylightRoofMat.color.setHex(0xcfd6db);
+            skylightRoofMat.emissive.setHex(0x000000);
+            skylightRoofMat.emissiveIntensity = 0;
+            skylightSkyMat.color.setHex(0xbfe3ff);
+            skylightDir.intensity = 0;
+            skylightDir.position.y = skylightLightDayY;
             // 白天模式灯亮度
             ceilLightMat.emissiveIntensity = 0.8;
             
@@ -1502,6 +1744,15 @@ const initGlobalBackground = () => {
             ceilMat.color.setHex(0x050505);
             ceilMat.emissive.setHex(0x000000);
             ceilMat.emissiveIntensity = 0;
+            shaftWallMat.color.setHex(0xbbbbbb);
+            shaftWallMat.emissive.setHex(0x666666);
+            shaftWallMat.emissiveIntensity = 0.6;
+            skylightRoofMat.color.setHex(0x2a3136);
+            skylightRoofMat.emissive.setHex(0x101820);
+            skylightRoofMat.emissiveIntensity = 0.12;
+            skylightSkyMat.color.setHex(0x345a78);
+            skylightDir.intensity = 50000.0;
+            skylightDir.position.y = skylightLightNightY;
             // 夜间模式灯亮度（保持夜里依然亮，作为唯一光源观感）
             ceilLightMat.emissiveIntensity = 1.8;
             
@@ -1835,60 +2086,32 @@ document.addEventListener('DOMContentLoaded', async function(e) {
 
         let heads = [];
         let activeIndex = 3; // 默认选中中间的 brunette 模型 (原本是2，加了1个所以变成3)
-        const itemSpacing = 250; // 平面平铺的水平间距
 
+        // 动态换算：把「30 个世界单位」换算成屏幕像素，使角色列的横移速度
+        // 与背景产品/画作列保持完全同步（消除"角色在地板上滑行"的错位感）。
+        //
+        // 角色大致站在 z = 0 的世界位置（地板上），bgCamera 位于 z = 40，
+        // 所以角色到相机的距离 ≈ 40。透视投影下：
+        // WORLD_STEP：每切一位 3D 场景平移的世界单位，必须与 showcaseSpacing / paintingSpacing 一致
+        const WORLD_STEP = 30;
+        // 注：itemSpacing 已废弃。位移完全由 animateBg 内部根据 absX + 相机 X 实时投影。
+        // 仅保留 resize 时触发一次 updateCarousel，以重新写入静态属性。
+        window.addEventListener('resize', () => {
+            if (typeof updateCarousel === 'function') updateCarousel();
+        });
+
+        // updateCarousel：仅负责初始化/静态样式 (zIndex/ty/scale 占位)。
+        // 位移 + wrap + active 判定移到 animateBg 里每帧做，由相机真实 X 驱动，保证与地板同步。
         const updateCarousel = () => {
-            const N = models.length;
             const items = turntable.querySelectorAll('.carousel-item');
             items.forEach((item, j) => {
-                let offset = j - activeIndex;
-                
-                // 将线性偏移转换为环形循环偏移 (首尾相连)
-                if (offset > Math.floor(N / 2)) {
-                    offset -= N;
-                } else if (offset < -Math.floor(N / 2)) {
-                    offset += N;
-                }
-
-                const distance = Math.abs(offset);
-                const tx = offset * itemSpacing;
-                // 这里是我们需要的终极暴力缩放！直接把整个 DOM 容器缩小到 0.85！
-                const scale = 0.85; 
-                const zIndex = offset === 0 ? 10 : 5 - distance;
-                
-                // 动态计算亮度：主模型 1.0(100%)，距离1的为 0.8(80%)，距离>=2的为 0.3(30%)
-                let brightness = 1.0;
-                if (distance === 1) {
-                    brightness = 0.8;
-                } else if (distance >= 2) {
-                    brightness = 0.3;
-                }
-                
-                // 处理无缝循环的视觉跳变：如果某一项的移动距离跨度很大，说明它是绕到了另一端
-                const oldTx = item.dataset.tx ? parseFloat(item.dataset.tx) : tx;
-                if (Math.abs(tx - oldTx) > itemSpacing * 1.5) {
-                    item.style.transition = 'none'; // 瞬间闪现到另一侧，不播放飞越屏幕的动画
-                } else {
-                    item.style.transition = ''; // 恢复 CSS 中的平滑过渡效果
-                }
-                item.dataset.tx = tx;
-                
+                // 每个 item 的 ty 偏移（4号/3号 有固定下压）
                 let ty = 0;
-                if (models[j].name === '4号') {
-                    ty = 15; // 使用 CSS transform 把整个 4号 容器(连同标签和模型)往下平移 15 像素
-                } else if (models[j].name === '3号') {
-                    ty = 20; // 同样使用 CSS transform 把整个 3号 容器往下平移 20 像素
-                }
-                
-                item.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
-                item.style.zIndex = zIndex;
-                item.style.filter = `brightness(${brightness})`;
-                
-                if (offset === 0) {
-                    item.classList.add('active');
-                } else {
-                    item.classList.remove('active');
-                }
+                if (models[j].name === '4号') ty = 15;
+                else if (models[j].name === '3号') ty = 20;
+                item.dataset.ty = String(ty);
+                // 初始化 tx（后续每帧会被 animateBg 覆盖）
+                if (!item.dataset.tx) item.dataset.tx = '0';
             });
         };
 
@@ -2061,11 +2284,16 @@ document.addEventListener('DOMContentLoaded', async function(e) {
         window.resetAutoRotateTimer();
 
         // 创建各个头像容器
+        const N_MODELS = models.length;
+        const MID_INDEX = Math.floor(N_MODELS / 2);
+        // WORLD_STEP 已在上方定义（= 30，与 showcaseSpacing / paintingSpacing 一致）
         for (let i = 0; i < models.length; i++) {
             const m = models[i];
             const item = document.createElement('div');
             item.className = 'carousel-item';
             item.dataset.index = i;
+            // 角色锚定在世界坐标系：每个 item 出生时分配一个固定 absX，永不重排
+            item.dataset.absX = String((i - MID_INDEX) * WORLD_STEP);
             turntable.appendChild(item);
 
             // 动态创建顶部的姓名和状态 Tag
