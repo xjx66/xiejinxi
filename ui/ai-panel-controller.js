@@ -15,7 +15,6 @@ export const createAiPanelController = ({
     createManagedWorldObject,
     replaceManagedSceneObject,
     deleteWorldObject,
-    selectSceneRoot,
     clearSelection,
     focusWorldObject,
     updateSelectedAvatarEntry,
@@ -228,9 +227,6 @@ export const createAiPanelController = ({
                 nextRoot = createManagedWorldObject(worldObject);
             }
             updateSelectedAvatarEntry(null);
-            if (nextRoot) {
-                selectSceneRoot(nextRoot, { reason: 'ai-panel-create-replace' });
-            }
             debugLogger.emit({
                 sessionId: 'hit-selection-accuracy',
                 runId: 'post-fix',

@@ -17,6 +17,7 @@ import { createDebugLogger } from "./infrastructure/debug-logger.js";
 import { createPickingSystem } from "./infrastructure/picking-system.js";
 import { createSelectionStore } from "./infrastructure/selection-store.js";
 import { createSelectionOverlay } from "./infrastructure/selection-overlay.js";
+import { createTransformGizmo } from "./infrastructure/transform-gizmo.js";
 import { createAssetFromUpload } from "./usecases/create-asset-from-upload.js";
 import { createWorldObjectFromAsset } from "./usecases/create-world-object-from-asset.js";
 import { replaceWorldObjectAsset } from "./usecases/replace-world-object-asset.js";
@@ -161,11 +162,6 @@ const initGlobalBackground = () => {
     const lastClickedWorldPoint = new THREE.Vector3(0, 0, 0);
     window.bgWorldOrigin = WORLD_ORIGIN.clone();
 
-    const collisionDebugGroup = new THREE.Group();
-    collisionDebugGroup.name = 'collision-debug-group';
-    collisionDebugGroup.visible = false;
-    bgScene.add(collisionDebugGroup);
-
     window.bgCamera = bgCamera; // 暴露给轮播逻辑，用于换算 30 世界单位对应的屏幕像素
     window.bgScene = bgScene;
     window.bgRenderer = bgRenderer;
@@ -186,14 +182,33 @@ const initGlobalBackground = () => {
         forward: false,
         backward: false
     };
-    const requestScenePointerLock = (event) => {
-        if (event && event.button !== 0) return;
+    const isInteractiveTarget = (target) => {
+        if (!target || !target.closest) return false;
+        if (target.closest('#avatar-dialogue-panel')) return true;
+        if (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('label')) return true;
+        return false;
+    };
+    const enterPointerLock = () => {
         if (document.pointerLockElement === document.body) return;
-        if (event && event.target && event.target.closest && event.target.closest('#avatar-dialogue-panel')) return;
-        if (event && event.target && event.target.closest && (event.target.closest('button') || event.target.closest('input'))) return;
-        if (document.body.requestPointerLock) {
-            document.body.requestPointerLock();
-        }
+        if (document.body.requestPointerLock) document.body.requestPointerLock();
+    };
+    const exitPointerLock = () => {
+        if (document.pointerLockElement !== document.body) return;
+        if (document.exitPointerLock) document.exitPointerLock();
+    };
+    const togglePointerLock = () => {
+        if (document.pointerLockElement === document.body) exitPointerLock();
+        else enterPointerLock();
+    };
+    // 默认：左键首次点击进入锁定（浏览器要求用户手势触发）。
+    // 解锁状态下左键点击场景空白处也重新进入锁定，但点击 AI 面板/按钮则不锁。
+    const requestScenePointerLock = (event) => {
+        if (!event || event.button !== 0) return;
+        if (document.pointerLockElement === document.body) return;
+        if (isInteractiveTarget(event.target)) return;
+        // 解锁状态下点击 gizmo 把手时不重新锁定，让用户可以拖拽。
+        if (typeof window.__gizmoHandleAt === 'function' && window.__gizmoHandleAt(event.clientX, event.clientY)) return;
+        enterPointerLock();
     };
     window.requestScenePointerLock = requestScenePointerLock;
     const syncPointerLockState = () => {
@@ -211,6 +226,29 @@ const initGlobalBackground = () => {
         window.bgLookDeltaX += event.movementX || 0;
         window.bgLookDeltaY += event.movementY || 0;
     });
+    // 锁定时光标被冻结，event.clientX/Y 是旧值；此时用屏幕中心（准星）作为有效拾取点。
+    const getEffectivePointerXY = (event) => {
+        if (window.bgPointerLocked) {
+            return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        }
+        return { x: event?.clientX ?? 0, y: event?.clientY ?? 0 };
+    };
+    window.getEffectivePointerXY = getEffectivePointerXY;
+    // 右键切换锁定状态：锁定中 → 解锁，可去 AI 面板操作；解锁中 → 重新锁定回视角模式。
+    const handleSceneRightClick = (event) => {
+        if (event.button !== 2) return;
+        if (isInteractiveTarget(event.target)) return; // AI 面板内右键不拦截
+        event.preventDefault();
+        event.stopPropagation();
+        togglePointerLock();
+    };
+    window.addEventListener('mousedown', handleSceneRightClick, { capture: true });
+    // 阻止场景区域的浏览器右键菜单（AI 面板内仍保留）
+    window.addEventListener('contextmenu', (event) => {
+        if (isInteractiveTarget(event.target)) return;
+        event.preventDefault();
+    });
+    // 左键首次点击场景空白处进入锁定
     bgCanvas.addEventListener('pointerdown', requestScenePointerLock);
     window.addEventListener('pointerdown', requestScenePointerLock, { capture: true });
 
@@ -218,15 +256,11 @@ const initGlobalBackground = () => {
         THREE,
         camera: bgCamera,
         getViewportSize: () => ({ width: window.innerWidth, height: window.innerHeight }),
-        collisionDebugGroup,
-        getCollisionDebugToggle: () => document.getElementById('collision-debug-toggle'),
         debugLogger
     });
     const registerHitTestTarget = (...args) => pickingSystem.registerTarget(...args);
     const unregisterHitTestTargets = (...args) => pickingSystem.unregisterTargets(...args);
     const queryBestHitTarget = (...args) => pickingSystem.query(...args);
-    const setCollisionDebugEnabled = (...args) => pickingSystem.setCollisionDebugEnabled(...args);
-    const refreshCollisionDebugHelpers = (...args) => pickingSystem.refreshCollisionDebugHelpers(...args);
     const getSelectableFocusPoint = (...args) => pickingSystem.getSelectableFocusPoint(...args);
     const worldClickRaycaster = new THREE.Raycaster();
     const worldClickMouse = new THREE.Vector2();
@@ -243,9 +277,6 @@ const initGlobalBackground = () => {
     const updateClickedWorldCoordinate = (point) => {
         if (!point) return;
         lastClickedWorldPoint.copy(point);
-        const clickedHud = document.getElementById('world-click-coordinate-value');
-        if (!clickedHud) return;
-        clickedHud.textContent = `X ${(point.x - WORLD_ORIGIN.x).toFixed(2)}  Y ${(point.y - WORLD_ORIGIN.y).toFixed(2)}  Z ${(point.z - WORLD_ORIGIN.z).toFixed(2)}`;
     };
     window.queryBestHitTarget = queryBestHitTarget;
     window.updateClickedWorldCoordinate = updateClickedWorldCoordinate;
@@ -371,6 +402,15 @@ const initGlobalBackground = () => {
     };
 
     if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(floorTiles);
+
+    floorTiles.userData = {
+        ...floorTiles.userData,
+        selectableType: 'ground',
+        worldObjectId: 'system-ground'
+    };
+    registerHitTestTarget(floorTiles, {
+        type: 'ground'
+    });
 
     // 原地板黑线网格已被瓷砖阵列的缝隙替代，不再需要 GridHelper
     // const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
@@ -570,28 +610,6 @@ const initGlobalBackground = () => {
     }
     if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightShaftsGroup);
 
-    // --- 天窗顶部聚光灯 ---
-    // 光源抬到屋面上方，让视觉上更像自然天光从室外洒下
-    const skylightLightDayY = 40 + shaftHeight + skylightSkyOffsetY - 4;
-    const skylightLightNightY = skylightLightDayY + 50;
-    const skylightDir = new THREE.SpotLight(0xffeedd, 50000.0); // 暖白强光，SpotLight 遵循物理衰减，需要极高强度
-    skylightDir.position.set(0, skylightLightNightY, SKYLIGHT_CENTER_Z);
-    skylightDir.target.position.set(0, -5, SKYLIGHT_CENTER_Z); // 指向地板上的树
-    skylightDir.angle = Math.PI / 6.2; // 更聚焦，匹配方形天窗
-    skylightDir.penumbra = 0.65; // 边缘柔和过渡
-    skylightDir.decay = 2.0; // 物理衰减
-    skylightDir.distance = 320; // 最大照射距离
-    
-    // 配置高精度阴影
-    skylightDir.castShadow = false;
-    skylightDir.shadow.mapSize.width = 2048;
-    skylightDir.shadow.mapSize.height = 2048;
-    skylightDir.shadow.camera.near = 10;
-    skylightDir.shadow.camera.far = 250;
-    
-    bgScene.add(skylightDir);
-    bgScene.add(skylightDir.target);
-
     // --- 在每个方形天窗中心下方种植一棵树 ---
     // 树放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
     const treesGroup = new THREE.Group();
@@ -777,31 +795,7 @@ const initGlobalBackground = () => {
             });
             treeSelectables.push(treeClone);
             registerHitTestTarget(treeClone, {
-                type: 'tree',
-                nearDistance: 260,
-                midDistance: 760,
-                screenPadding: 14,
-                farScreenPadding: 18,
-                colliderScreenPadding: 22,
-                colliderScreenFactor: 0.55,
-                selectionBias: -18,
-                getWorldBox: () => {
-                    const box = new THREE.Box3().setFromObject(treeClone);
-                    if (box.isEmpty()) return box;
-                    const size = new THREE.Vector3();
-                    const center = new THREE.Vector3();
-                    box.getSize(size);
-                    box.getCenter(center);
-                    const trunkHalfWidth = Math.max(10, size.x * 0.16);
-                    const trunkHalfDepth = Math.max(10, size.z * 0.16);
-                    const trunkHeight = Math.max(48, size.y * 0.52);
-                    return new THREE.Box3(
-                        new THREE.Vector3(center.x - trunkHalfWidth, box.min.y, center.z - trunkHalfDepth),
-                        new THREE.Vector3(center.x + trunkHalfWidth, box.min.y + trunkHeight, center.z + trunkHalfDepth)
-                    );
-                },
-                getColliderObject: () => treeClone,
-                getPreciseRoots: () => []
+                type: 'tree'
             });
         }
         finishSceneLoadingItem('environment:trees');
@@ -1062,13 +1056,6 @@ const initGlobalBackground = () => {
     const replaceManagedSceneObject = sceneObjectLifecycle.replaceManagedSceneObject;
     window.createManagedWorldObject = createManagedWorldObject;
     window.replaceManagedSceneObject = replaceManagedSceneObject;
-    const collisionDebugToggle = document.getElementById('collision-debug-toggle');
-    collisionDebugToggle?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        event.preventDefault();
-        setCollisionDebugEnabled(!pickingSystem.isCollisionDebugEnabled());
-    });
-    setCollisionDebugEnabled(false);
     if (!START_WITH_EMPTY_SYSTEM_SCENE) {
         startSceneLoadingItem('runtime:avatars', '角色');
         createAvatarWorldRuntime({
@@ -1085,11 +1072,7 @@ const initGlobalBackground = () => {
             runtime.getEntries().forEach((entry) => {
                 window.bgLabels.push(entry.mesh);
                 registerHitTestTarget(entry.mesh, {
-                    type: 'avatar',
-                    dynamic: true,
-                    ...(entry.config.hitTest || {}),
-                    getColliderObject: () => entry.pickVolume || entry.mesh,
-                    getPreciseRoots: () => [entry.controller.worldObject || entry.mesh]
+                    type: 'avatar'
                 });
                 registerSceneInstance({
                     objectId: `avatar-${entry.key}`,
@@ -1178,17 +1161,7 @@ const initGlobalBackground = () => {
         const canvasMesh = new THREE.Mesh(template.canvasGeo, template.canvasMat);
         canvasMesh.position.z = template.frameDepth / 2 + 0.01;
         paintingGroup.add(canvasMesh);
-        const paintingPickVolume = new THREE.Mesh(
-            new THREE.BoxGeometry(
-                (paintingData?.width || 9) + 1.6,
-                (paintingData?.height || 9) + 1.6,
-                Math.max(template.frameDepth * 3, 6)
-            ),
-            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
-        );
-        paintingPickVolume.name = 'painting-pick-volume';
-        paintingGroup.add(paintingPickVolume);
-        
+
         // 创建标签并存储在 userData 中
         const paintingSceneObjectId = `${paintingData.worldObjectId || `painting-${dataIndex}` }__instance_${c}`;
         const label = createBgLabel(paintingData.name || "Art", paintingData.time || "", paintingData.desc || "");
@@ -1225,14 +1198,7 @@ const initGlobalBackground = () => {
         paintingsGroup.add(paintingGroup);
         paintingSelectables.push(paintingGroup);
         registerHitTestTarget(paintingGroup, {
-            type: 'painting',
-            nearDistance: 260,
-            midDistance: 840,
-            screenPadding: 18,
-            farScreenPadding: 24,
-            selectionBias: 10,
-            getColliderObject: () => paintingPickVolume,
-            getPreciseRoots: () => [paintingGroup]
+            type: 'painting'
         });
         registerSceneInstance({
             objectId: paintingSceneObjectId,
@@ -1272,24 +1238,6 @@ const initGlobalBackground = () => {
 
     const animatedShowcaseItems = []; // 保存需要做动画的物品
     const gltfLoader = new GLTFLoader();
-    const createProductPickVolume = (targetSize, height = targetSize) => {
-        const width = Math.max(targetSize * 2.8, targetSize + 30);
-        const pickHeight = Math.max(height * 2.4, targetSize + 24);
-        const depth = Math.max(targetSize * 3.2, targetSize + 36);
-        const geometry = new THREE.BoxGeometry(width, pickHeight, depth);
-        const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-        const hitBox = new THREE.Mesh(geometry, material);
-        hitBox.name = 'product-hit-box';
-        return hitBox;
-    };
-    const resizeProductPickVolume = (hitBox, targetSize, height = targetSize) => {
-        if (!hitBox) return;
-        hitBox.geometry.dispose();
-        const width = Math.max(targetSize * 2.8, targetSize + 30);
-        const pickHeight = Math.max(height * 2.4, targetSize + 24);
-        const depth = Math.max(targetSize * 3.2, targetSize + 36);
-        hitBox.geometry = new THREE.BoxGeometry(width, pickHeight, depth);
-    };
 
     // 拿到我们配置的产品列表
     const productList = dedupeByAssetId(worldCollections.getProductConfigs());
@@ -1316,7 +1264,6 @@ const initGlobalBackground = () => {
         const z = -70; // 中景位置，避免默认视角射线先穿过前景 Avatar。
         let productConfig = null;
         let productSceneObjectId = `product-placeholder__instance_${c}`;
-        let pickVolume = null;
         
         // 创建一个外层容器，用来承载几何体或加载后的模型
         const itemContainer = new THREE.Group();
@@ -1384,11 +1331,6 @@ const initGlobalBackground = () => {
                         video: video
                     };
                     
-                    // 添加完全透明的碰撞盒(HitBox)
-                    const hitBox = createProductPickVolume(targetSize, targetSize * (9/16));
-                    itemContainer.add(hitBox);
-                    pickVolume = hitBox;
-                    
                     let isLoaded = false;
                     
                     // 创建标签并存储
@@ -1427,7 +1369,6 @@ const initGlobalBackground = () => {
                         const height = targetSize / aspect;
                         screenMesh.geometry.dispose();
                         screenMesh.geometry = new THREE.PlaneGeometry(targetSize, height);
-                        resizeProductPickVolume(hitBox, targetSize, height);
                         
                         // 动态更新标签的高度，确保它始终在视频的正上方
                         itemContainer.userData.labelWorldOffset.y = height / 2 + 3;
@@ -1459,8 +1400,6 @@ const initGlobalBackground = () => {
                     const label = createBgLabel(productConfig.name || "Model", productConfig.time || "", productConfig.desc || "");
                     const labelYOffset = targetSize / 2 + 3;
                     const loader = createBgLoader();
-                    pickVolume = createProductPickVolume(targetSize, targetSize);
-                    itemContainer.add(pickVolume);
                     
                     itemContainer.userData.labelType = 'product';
                     itemContainer.userData.worldObjectId = productSceneObjectId;
@@ -1518,10 +1457,6 @@ const initGlobalBackground = () => {
                     }, (error) => {
                         console.error(`Error loading product (${productConfig.url}):`, error);
                         itemContainer.add(new THREE.Mesh(holoGeo, holoMat));
-                        if (!pickVolume) {
-                            pickVolume = createProductPickVolume(4, 4);
-                            itemContainer.add(pickVolume);
-                        }
                         finishSceneLoadingItem(productLoadingId, '模型加载失败，已使用占位对象');
                     });
                 }
@@ -1529,9 +1464,6 @@ const initGlobalBackground = () => {
         } else {
             // 如果列表为空，默认使用占位符
             itemContainer.add(new THREE.Mesh(holoGeo, holoMat));
-            const hitBox = createProductPickVolume(4, 4);
-            itemContainer.add(hitBox);
-            pickVolume = hitBox;
         }
         
         itemContainer.userData.selectableType = 'product';
@@ -1539,15 +1471,7 @@ const initGlobalBackground = () => {
         showcaseGroup.add(itemContainer);
         productSelectables.push(itemContainer);
         registerHitTestTarget(itemContainer, {
-            type: 'product',
-            dynamic: true,
-            nearDistance: 320,
-            midDistance: 900,
-            screenPadding: 20,
-            farScreenPadding: 26,
-            selectionBias: 16,
-            getColliderObject: () => pickVolume || itemContainer,
-            getPreciseRoots: () => [itemContainer]
+            type: 'product'
         });
         // #region debug-point product-registration
         if (window.__DEBUG_PRODUCT_PICKING__) {
@@ -1564,8 +1488,6 @@ const initGlobalBackground = () => {
                         productSceneObjectId,
                         productName: productConfig?.name || null,
                         productType: productConfig?.type || null,
-                        hasPickVolumeAtRegister: Boolean(pickVolume),
-                        pickVolumeName: pickVolume?.name || null,
                         childCount: itemContainer.children.length,
                         position: {
                             x: itemContainer.position.x,
@@ -1609,6 +1531,17 @@ const initGlobalBackground = () => {
         selectionStore,
         getInteractionBox: (object) => pickingSystem.getInteractionBox(object),
         getSelectionBoxColor
+    });
+    createTransformGizmo({
+        THREE,
+        scene: bgScene,
+        camera: bgCamera,
+        domElement: bgCanvas,
+        selectionStore,
+        sceneObjectRegistry,
+        worldState,
+        getInteractionBox: (object) => pickingSystem.getInteractionBox(object),
+        isPointerLocked: () => Boolean(window.bgPointerLocked)
     });
     selectionStore.subscribe((state) => {
         activeBackgroundSelectable = state.root || null;
@@ -1682,6 +1615,7 @@ const initGlobalBackground = () => {
 
     window.addEventListener('pointerup', (e) => {
         if (e.button !== 0) return;
+        if (window.__gizmoDragging__ || window.__gizmoConsumedPointerUp__) return;
         if (e.target.closest && (e.target.closest('button') || e.target.closest('input') || e.target.closest('textarea') || e.target.closest('label'))) {
             return;
         }
@@ -1689,24 +1623,23 @@ const initGlobalBackground = () => {
         if (isInputTarget) {
             return;
         }
+        // 解锁状态下，左键点击场景被忽略，保持已选中对象/坐标不变。
+        // 这样从锁定 → 右键解锁去操作面板的过程中，左键点 panel 外的空白不会清掉选中状态。
+        if (!window.bgPointerLocked) return;
         // #region debug-point I:pointerup-begin
         debugLogger.emit({sessionId:"hit-selection-accuracy",runId:"pre-fix-r3",hypothesisId:"I",location:"talkinghead.js:pointerup:begin",msg:"[DEBUG] pointerup selection flow begin",data:{clientX:e.clientX,clientY:e.clientY,bgPointerDownX:bgObjectPointerDownX,bgPointerDownY:bgObjectPointerDownY,bgPointerDownAgeMs:Date.now()-bgObjectPointerDownTime},ts:Date.now()});
         // #endregion
-        const dx = e.clientX - bgObjectPointerDownX;
-        const dy = e.clientY - bgObjectPointerDownY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const timeElapsed = Date.now() - bgObjectPointerDownTime;
-        if (distance >= 10 || timeElapsed >= 500) return;
 
-        const hitResult = queryBestHitTarget(e.clientX, e.clientY);
+        const pointerXY = getEffectivePointerXY(e);
+        const hitResult = queryBestHitTarget(pointerXY.x, pointerXY.y);
         const object = hitResult?.object || null;
         const clickedPoint = hitResult?.hitPoint?.clone?.()
-            || getWorldPlanePointFromPointer(e.clientX, e.clientY);
+            || getWorldPlanePointFromPointer(pointerXY.x, pointerXY.y);
         // #region debug-point AFH:pointerup-hit
-        debugLogger.emit({sessionId:"avatar-focus-hit-test",runId:"post-fix",hypothesisId:"H1",location:"talkinghead.js:pointerup:hit",msg:"[DEBUG] pointerup resolved hit with camera state",data:{clientX:e.clientX,clientY:e.clientY,gestureDistance:Number(distance.toFixed(2)),gestureTimeMs:timeElapsed,camera:{x:Number(bgCamera.position.x.toFixed(2)),y:Number(bgCamera.position.y.toFixed(2)),z:Number(bgCamera.position.z.toFixed(2)),targetX:window.bgTargetPositionX??null,targetZ:window.bgTargetPositionZ??null},winner:{mode:hitResult?.mode||null,type:hitResult?.target?.type||null,rootName:object?.name||null,worldObjectId:object?.userData?.worldObjectId||null,selectableType:object?.userData?.selectableType||null,screenDistance:hitResult?.screenDistance??null,distance:hitResult?.distance??null,score:hitResult?.score??null,lod:hitResult?.lod||null},clickedPoint:clickedPoint?{x:Number(clickedPoint.x.toFixed(2)),y:Number(clickedPoint.y.toFixed(2)),z:Number(clickedPoint.z.toFixed(2))}:null,activeBefore:activeBackgroundSelectable?.userData?.worldObjectId||null},ts:Date.now()});
+        debugLogger.emit({sessionId:"avatar-focus-hit-test",runId:"post-fix",hypothesisId:"H1",location:"talkinghead.js:pointerup:hit",msg:"[DEBUG] pointerup resolved hit with camera state",data:{clientX:e.clientX,clientY:e.clientY,camera:{x:Number(bgCamera.position.x.toFixed(2)),y:Number(bgCamera.position.y.toFixed(2)),z:Number(bgCamera.position.z.toFixed(2)),targetX:window.bgTargetPositionX??null,targetZ:window.bgTargetPositionZ??null},winner:{mode:hitResult?.mode||null,type:hitResult?.target?.type||null,rootName:object?.name||null,worldObjectId:object?.userData?.worldObjectId||null,selectableType:object?.userData?.selectableType||null,distance:hitResult?.distance??null},clickedPoint:clickedPoint?{x:Number(clickedPoint.x.toFixed(2)),y:Number(clickedPoint.y.toFixed(2)),z:Number(clickedPoint.z.toFixed(2))}:null,activeBefore:activeBackgroundSelectable?.userData?.worldObjectId||null},ts:Date.now()});
         // #endregion
         // #region debug-point I:pointerup-after-hit
-        debugLogger.emit({sessionId:"hit-selection-accuracy",runId:"pre-fix-r3",hypothesisId:"I",location:"talkinghead.js:pointerup:afterHit",msg:"[DEBUG] pointerup hit query resolved",data:{clientX:e.clientX,clientY:e.clientY,gestureDistance:distance,gestureTimeMs:timeElapsed,hitMode:hitResult?.mode||null,hitRootName:object?.name||null,hitWorldObjectId:object?.userData?.worldObjectId||null,hitSelectableType:object?.userData?.selectableType||null,hitScreenDistance:hitResult?.screenDistance??null,hitDistance:hitResult?.distance??null,clickedPoint:clickedPoint?{x:Number(clickedPoint.x.toFixed(2)),y:Number(clickedPoint.y.toFixed(2)),z:Number(clickedPoint.z.toFixed(2))}:null},ts:Date.now()});
+        debugLogger.emit({sessionId:"hit-selection-accuracy",runId:"pre-fix-r3",hypothesisId:"I",location:"talkinghead.js:pointerup:afterHit",msg:"[DEBUG] pointerup hit query resolved",data:{clientX:e.clientX,clientY:e.clientY,hitMode:hitResult?.mode||null,hitRootName:object?.name||null,hitWorldObjectId:object?.userData?.worldObjectId||null,hitSelectableType:object?.userData?.selectableType||null,hitDistance:hitResult?.distance??null,clickedPoint:clickedPoint?{x:Number(clickedPoint.x.toFixed(2)),y:Number(clickedPoint.y.toFixed(2)),z:Number(clickedPoint.z.toFixed(2))}:null},ts:Date.now()});
         // #endregion
         if (clickedPoint) {
             updateClickedWorldCoordinate(clickedPoint);
@@ -1919,16 +1852,7 @@ const initGlobalBackground = () => {
         lookTarget.copy(bgCamera.position).addScaledVector(lookDirection, 1200);
         bgCamera.lookAt(lookTarget);
 
-        const worldCoordinateHud = document.getElementById('world-coordinate-value');
-        if (worldCoordinateHud) {
-            const currentX = bgCamera.position.x - WORLD_ORIGIN.x;
-            const currentY = bgCamera.position.y - WORLD_ORIGIN.y;
-            const currentZ = bgCamera.position.z - WORLD_ORIGIN.z;
-            worldCoordinateHud.textContent = `X ${currentX.toFixed(2)}  Y ${currentY.toFixed(2)}  Z ${currentZ.toFixed(2)}`;
-        }
-
         avatarWorldRuntime?.update(deltaSeconds);
-        refreshCollisionDebugHelpers();
 
         // 大黄和X角色的右键提示图标保持固定显示，不再随着推进淡出
         document.querySelectorAll('.mouse-click-anim').forEach(anim => {
@@ -1953,11 +1877,6 @@ const initGlobalBackground = () => {
         ceilLights.position.x = 0;
         floorTiles.position.x = 0;
         wallPanels.position.x = 0;
-        
-        // 方形天窗的聚光吸附到最近一个天窗中心，避免连续跟随时偏离开孔
-        const activeSkylightX = Math.round((bgCamera.position.x - SKYLIGHT_GRID_PHASE) / treeSpacing) * treeSpacing + SKYLIGHT_GRID_PHASE;
-        skylightDir.position.x = activeSkylightX;
-        skylightDir.target.position.x = activeSkylightX;
         
         // 背景对象阵列保持静态分布，不再做横向周期循环。
         paintingsGroup.position.x = 0;
@@ -2109,8 +2028,6 @@ const initGlobalBackground = () => {
             skylightRoofMat.emissive.setHex(0x000000);
             skylightRoofMat.emissiveIntensity = 0;
             skylightSkyMat.color.setHex(0xbfe3ff);
-            skylightDir.intensity = 0;
-            skylightDir.position.y = skylightLightDayY;
             // 白天模式灯亮度
             ceilLightMat.emissiveIntensity = 0.8;
             
@@ -2148,8 +2065,6 @@ const initGlobalBackground = () => {
             skylightRoofMat.emissive.setHex(0x101820);
             skylightRoofMat.emissiveIntensity = 0.12;
             skylightSkyMat.color.setHex(0x345a78);
-            skylightDir.intensity = 50000.0;
-            skylightDir.position.y = skylightLightNightY;
             // 夜间模式灯亮度（保持夜里依然亮，作为唯一光源观感）
             ceilLightMat.emissiveIntensity = 1.8;
             
@@ -2396,9 +2311,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         deleteWorldObject: (worldObjectId) => {
             sceneObjectRegistry.destroyWorldObject(worldObjectId);
             worldState.removeWorldObject(worldObjectId);
-        },
-        selectSceneRoot: (root, meta = {}) => {
-            setActiveBackgroundSelectable(root, meta);
         },
         clearSelection: (reason) => {
             clearActiveBackgroundSelectable(reason);

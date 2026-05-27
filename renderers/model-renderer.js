@@ -2,17 +2,6 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { normalizeAssetInfo } from '../domain/asset-schema.js';
 
-const createProductPickVolume = (targetSize, height = targetSize) => {
-    const width = Math.max(targetSize * 2.8, targetSize + 30);
-    const pickHeight = Math.max(height * 2.4, targetSize + 24);
-    const depth = Math.max(targetSize * 3.2, targetSize + 36);
-    const geometry = new THREE.BoxGeometry(width, pickHeight, depth);
-    const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-    const hitBox = new THREE.Mesh(geometry, material);
-    hitBox.name = 'product-hit-box';
-    return { hitBox, material };
-};
-
 export const createModelSceneObject = ({
     worldObject,
     asset,
@@ -33,9 +22,6 @@ export const createModelSceneObject = ({
     const label = createLabel(worldObject.metadata?.name || asset.name || 'Model', '', worldObject.metadata?.desc || '');
     let isLoaded = false;
     const gltfLoader = new GLTFLoader();
-
-    const { hitBox, material: hitBoxMat } = createProductPickVolume(targetSize);
-    root.add(hitBox);
 
     gltfLoader.load(asset.url, (gltf) => {
         const model = gltf.scene;
@@ -90,15 +76,7 @@ export const createModelSceneObject = ({
     scene.add(root);
 
     registerHitTestTarget(root, {
-        type: 'product',
-        dynamic: true,
-        nearDistance: 320,
-        midDistance: 900,
-        screenPadding: 20,
-        farScreenPadding: 26,
-        selectionBias: 16,
-        getColliderObject: () => hitBox,
-        getPreciseRoots: () => [root]
+        type: 'product'
     });
 
     return {
@@ -107,8 +85,6 @@ export const createModelSceneObject = ({
             root.removeFromParent();
             label?.remove?.();
             loader?.container?.remove?.();
-            hitBox.geometry.dispose();
-            hitBoxMat.dispose();
         }
     };
 };

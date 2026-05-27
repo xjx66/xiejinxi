@@ -7,7 +7,6 @@ export const createAvatarWorldEntry = ({
     label,
     loader,
     fittedSize,
-    pickVolume,
     getLoaded,
     getProgress
 }) => {
@@ -24,14 +23,12 @@ export const createAvatarWorldEntry = ({
         profile.worldTransform.rotation.z
     );
     selectableRoot.add(controller.worldObject);
-    selectableRoot.add(pickVolume);
 
     const entry = {
         key: profile.key,
         profile,
         config: profile.legacyConfig,
         mesh: selectableRoot,
-        pickVolume,
         controller,
         planeSize: fittedSize,
         label,
@@ -62,12 +59,6 @@ export const createAvatarWorldEntry = ({
         avatarPlaneSize: entry.planeSize
     };
 
-    pickVolume.userData = {
-        ...pickVolume.userData,
-        worldObjectId: profile.worldObjectId,
-        selectableType: 'avatar',
-        selectableRoot: selectableRoot
-    };
-
     return entry;
 };
+

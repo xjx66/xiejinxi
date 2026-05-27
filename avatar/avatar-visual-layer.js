@@ -72,19 +72,3 @@ export const fitAvatarWorldObjectToTargetHeight = ({ THREE, worldObject, profile
     };
 };
 
-export const createAvatarPickVolume = ({ THREE, profile, fittedSize }) => {
-    const pickVolumeScale = profile.interaction.pickVolumeScale || {};
-    const width = Math.max(profile.worldSize.width * 0.9, fittedSize.width || profile.worldSize.width) * (pickVolumeScale.width ?? 1);
-    const height = Math.max(profile.worldSize.height * 0.92, fittedSize.height || profile.worldSize.height) * (pickVolumeScale.height ?? 1);
-    const depth = Math.max(8, Math.max(profile.worldSize.width * 0.8, fittedSize.depth || profile.worldSize.width * 0.6)) * (pickVolumeScale.depth ?? 1);
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const material = new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        depthWrite: false
-    });
-    const pickVolume = new THREE.Mesh(geometry, material);
-    pickVolume.name = `${profile.key}-pick-volume`;
-    pickVolume.position.y = height * 0.5 + (pickVolumeScale.offsetY ?? 0);
-    return pickVolume;
-};

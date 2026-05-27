@@ -17,10 +17,6 @@ export const createImageSceneObject = ({
     const frameThickness = 0.8;
     const frameDepth = 0.5;
     const imageDepthOffset = hasFrame ? frameDepth / 2 + 0.01 : 0;
-    const visualPickWidth = hasFrame ? width + frameThickness * 2 : width;
-    const visualPickHeight = hasFrame ? height + frameThickness * 2 : height;
-    const pickWidth = Math.max(visualPickWidth * 2.4, visualPickWidth + 18);
-    const pickHeight = Math.max(visualPickHeight * 2.4, visualPickHeight + 18);
 
     const root = new THREE.Group();
     root.name = `world-object-${worldObject.id}`;
@@ -63,11 +59,6 @@ export const createImageSceneObject = ({
     const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
     canvasMesh.position.z = imageDepthOffset;
     root.add(canvasMesh);
-    const pickVolumeGeo = new THREE.BoxGeometry(pickWidth, pickHeight, Math.max(frameDepth * 3, 10));
-    const pickVolumeMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-    const pickVolume = new THREE.Mesh(pickVolumeGeo, pickVolumeMat);
-    pickVolume.name = `${worldObject.id}-pick-volume`;
-    root.add(pickVolume);
 
     root.userData = {
         ...root.userData,
@@ -88,14 +79,7 @@ export const createImageSceneObject = ({
     scene.add(root);
 
     registerHitTestTarget(root, {
-        type: selectableType,
-        nearDistance: 260,
-        midDistance: 840,
-        screenPadding: 18,
-        farScreenPadding: 24,
-        selectionBias: 10,
-        getColliderObject: () => pickVolume,
-        getPreciseRoots: () => [root]
+        type: selectableType
     });
 
     return {
@@ -108,8 +92,6 @@ export const createImageSceneObject = ({
             frameMat?.dispose();
             canvasGeo.dispose();
             canvasMat.dispose();
-            pickVolumeGeo.dispose();
-            pickVolumeMat.dispose();
             texture.dispose();
         }
     };

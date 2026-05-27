@@ -39,6 +39,10 @@ export const createSelectionStore = () => {
             emit();
             return snapshot();
         },
+        touch() {
+            emit();
+            return snapshot();
+        },
         subscribe(listener) {
             listeners.add(listener);
             listener(snapshot());

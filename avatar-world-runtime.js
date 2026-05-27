@@ -6,7 +6,7 @@ import { createRobotAvatarEngine } from './avatar-engine-robot.js';
 import { createDecalsAvatarEngine } from './avatar-engine-decals.js';
 import { createAvatarRuntimeProfile } from './avatar/avatar-config-adapter.js';
 import { createAvatarHostRoot, createAvatarHost } from './avatar/avatar-host-layer.js';
-import { createAvatarPickVolume, fitAvatarWorldObjectToTargetHeight } from './avatar/avatar-visual-layer.js';
+import { fitAvatarWorldObjectToTargetHeight } from './avatar/avatar-visual-layer.js';
 import { createTalkingHeadAvatarEngine } from './avatar/talkinghead-avatar-engine.js';
 import { createAvatarWorldEntry } from './avatar/avatar-world-factory.js';
 
@@ -77,11 +77,6 @@ export async function createAvatarWorldRuntime({
             worldObject: controller.worldObject,
             profile
         });
-        const pickVolume = createAvatarPickVolume({
-            THREE,
-            profile,
-            fittedSize
-        });
         const entry = createAvatarWorldEntry({
             THREE,
             profile,
@@ -89,7 +84,6 @@ export async function createAvatarWorldRuntime({
             label,
             loader,
             fittedSize,
-            pickVolume,
             getLoaded: () => isLoaded,
             getProgress: () => progress
         });
