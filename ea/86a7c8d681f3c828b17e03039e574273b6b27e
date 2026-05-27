@@ -1,0 +1,49 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "ea86a7c8d681f3c828b17e03039e574273b6b27e",
+  "prompts": {
+    "445d8d8bcca3ae3f": {
+      "agent_id": {
+        "tool": "trae-cue",
+        "id": "ai_tab-icr-3aa865f6-a542-4562-a5ac-d0447b021d32",
+        "model": "default"
+      },
+      "human_author": "xiejinxi <xiejinxi@bytedance.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 1
+    },
+    "5ce34a20588f18bf": {
+      "agent_id": {
+        "tool": "trae-cue",
+        "id": "ai_tab-icr-7d943093-60ed-4109-9ff2-f0d4920be37c",
+        "model": "default"
+      },
+      "human_author": "xiejinxi <xiejinxi@bytedance.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "b77704c71a8db94a": {
+      "agent_id": {
+        "tool": "trae-cue",
+        "id": "ai_tab-icr-749c064f-cb1e-4131-b39b-6350f124e0e2",
+        "model": "default"
+      },
+      "human_author": "xiejinxi <xiejinxi@bytedance.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 1
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
