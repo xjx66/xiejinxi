@@ -46,7 +46,7 @@ function init() {
         model.position.y = -1.2;
 
         model.traverse( function ( object ) {
-            if ( object.isMesh ) object.castShadow = true;
+            if ( object.isMesh ) object.castShadow = false;
         } );
 
         mixer = new THREE.AnimationMixer( model );
@@ -163,15 +163,11 @@ function init() {
         event.preventDefault();
     });
 
-    container.addEventListener('pointerdown', function(event) {
+    container.addEventListener('pointerdown', function() {
         moved = false;
     });
 
     container.addEventListener('pointerup', (event) => {
-        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
-        const carouselItem = container.closest('.carousel-item');
-        if (!carouselItem || !carouselItem.classList.contains('active')) return;
-
         // 触发范围与右键提示（tooltip）一致：只要在 container 内右键即触发，不再要求 raycast 命中模型本体
         if (moved === false && event.button === 2 && model) {
             const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
@@ -195,13 +191,6 @@ function init() {
     document.body.appendChild(tooltip);
 
     container.addEventListener('pointermove', function(event) {
-        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
-        const carouselItem = container.closest('.carousel-item');
-        if (!carouselItem || !carouselItem.classList.contains('active')) {
-            tooltip.style.display = 'none';
-            return;
-        }
-
         // 更新 tooltip 位置
         tooltip.style.display = 'block';
         tooltip.style.left = (event.clientX + 15) + 'px';

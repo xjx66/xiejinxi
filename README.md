@@ -1,41 +1,72 @@
-# 我们的网站
+# Our Website
 
-一个关于 Bot1 和 大哥共同推进抖音VoC产品建设的简约展示网站。
+当前项目已经从早期展示型站点，演进为一个面向 3D 世界编辑器方向的实验性原型。
 
-## 项目结构
+目前仓库同时包含两部分内容：
 
-```
-our-website/
-├── index.html      # 主页面
-├── style.css       # 样式文件
-├── script.js       # 交互脚本
-└── README.md       # 项目说明
-```
+- 运行中的 3D 场景与交互代码
+- 面向产品化改造的方案、架构和调试文档
 
-## 特点
+## 快速开始
 
-- 🎨 **现代简约设计** - 清晰的层次结构，舒适的视觉体验
-- 📱 **响应式布局** - 适配桌面和移动设备
-- ✨ **交互动画** - 滚动渐入、悬停效果，提升用户体验
-- 🔗 **核心资源入口** - 整合我们日常工作中常用的平台链接
-- 🚀 **纯静态页面** - 无需后端，直接部署即可使用
-
-## 本地预览
-
-直接用浏览器打开 `index.html` 即可预览，或者使用本地服务器：
+本地启动：
 
 ```bash
-# 使用 Python
-python3 -m http.server 8000
-# 然后访问 http://localhost:8000
+npm start
 ```
 
-## 部署
+默认访问：
 
-静态页面可以直接部署到任何静态网站托管服务：
-- Vercel
-- Netlify 
-- GitHub Pages
-- 或者你准备好的服务器，直接上传文件即可
+```text
+http://localhost:3000
+```
 
-明天你发了服务器配置，我可以帮你完成部署。
+## 代码入口
+
+当前主要文件：
+
+- `index.html`
+- `style.css`
+- `talkinghead.js`
+- `avatar-assets.js`
+- `avatar-world-runtime.js`
+
+首轮基础设施与资产管理模块已经开始拆出：
+
+- `content/assets/system-assets.js`
+- `content/templates/object-templates.js`
+- `content/worlds/default-world.js`
+- `infrastructure/world-state.js`
+- `infrastructure/object-factory.js`
+- `infrastructure/ai-action-context.js`
+- `infrastructure/upload-runtime.js`
+- `infrastructure/ai-rule-engine.js`
+- `infrastructure/scene-object-registry.js`
+- `renderers/image-renderer.js`
+- `renderers/video-renderer.js`
+- `renderers/model-renderer.js`
+
+当前状态是：
+
+- 现有场景继续由 `talkinghead.js` 驱动
+- 系统资产、对象模板、默认世界和世界状态已经独立成模块
+- 产品列与画作列已改为从 `worldState` / `worldCollections` 取配置
+- 右侧已改为全局 AI 操作面板，支持“点击坐标/对象 -> 上传资产 -> 确认创建或替换”
+- 当前通过代码规则模拟 AI 决策，提示词会参与名称、展示类型和模板选择
+- 新建与替换已支持图片、视频、GLB，且允许跨类型替换
+- 后续将继续把更多对象实例化和编辑逻辑逐步迁出入口脚本
+
+## 文档结构
+
+项目文档已集中到 `docs/` 目录：
+
+- [docs/README.md](file:///Users/bytedance/Desktop/our-website/docs/README.md)：文档总入口
+- [product](file:///Users/bytedance/Desktop/our-website/docs/product)：产品方向与一期 Demo 方案
+- [architecture](file:///Users/bytedance/Desktop/our-website/docs/architecture)：架构与拆分方案
+- [debug](file:///Users/bytedance/Desktop/our-website/docs/debug)：历史调试记录
+- [integration](file:///Users/bytedance/Desktop/our-website/docs/integration)：外部集成说明
+
+## 说明
+
+- `.trae/` 下保留的是内部规格、计划和调试产物，不作为对外文档主结构。
+- `TalkingHead/`、`HeadTTS/`、`mediapipe/` 下的 `README` 属于第三方或子模块文档，保持原位。

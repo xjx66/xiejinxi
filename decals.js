@@ -129,15 +129,11 @@ function init() {
     });
 
     // Handle touch/click events
-    container.addEventListener('pointerdown', function(event) {
+    container.addEventListener('pointerdown', function() {
         moved = false;
     });
 
     container.addEventListener('pointerup', function(event) {
-        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
-        const carouselItem = container.closest('.carousel-item');
-        if (!carouselItem || !carouselItem.classList.contains('active')) return;
-
         // 只有右键 (button === 2) 才允许涂鸦
         if (moved === false && event.button === 2) {
             checkIntersection(event.clientX, event.clientY);
@@ -168,13 +164,6 @@ function init() {
             checkIntersection(event.clientX, event.clientY);
         }
         
-        // 判断当前模型所在的 carousel-item 是否被选中 (具有 active 类)
-        const carouselItem = container.closest('.carousel-item');
-        if (!carouselItem || !carouselItem.classList.contains('active')) {
-            tooltip.style.display = 'none';
-            return;
-        }
-
         // tooltip 显示范围与右键触发范围保持一致：只在 raycast 命中涂鸦 mesh 时才显示
         if (!intersection.intersects) {
             tooltip.style.display = 'none';

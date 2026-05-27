@@ -32,19 +32,15 @@ import { createAiPanelController } from "./ui/ai-panel-controller.js";
 // 方便你后续上传新资源并替换路径。
 // =======================================================================
 export const AssetLibrary = SYSTEM_ASSET_LIBRARY;
-const START_WITH_EMPTY_SYSTEM_SCENE = true;
 
 const DEFAULT_WORLD_DEFINITION = createDefaultWorldDefinition({
-    assetLibrary: START_WITH_EMPTY_SYSTEM_SCENE
-        ? { ...AssetLibrary, products: [], paintings: [], avatarTemplates: [] }
-        : AssetLibrary,
-    avatarConfigs: START_WITH_EMPTY_SYSTEM_SCENE ? [] : AVATAR_MODELS
+    assetLibrary: AssetLibrary,
+    avatarConfigs: AVATAR_MODELS
 });
-const EMPTY_SYSTEM_ASSETS = SYSTEM_ASSETS.filter((asset) => asset.id === 'asset-texture-skylightHdr');
 
 const worldState = createWorldState({
     world: DEFAULT_WORLD_DEFINITION.world,
-    assets: START_WITH_EMPTY_SYSTEM_SCENE ? EMPTY_SYSTEM_ASSETS : SYSTEM_ASSETS,
+    assets: SYSTEM_ASSETS,
     templates: OBJECT_TEMPLATES,
     worldObjects: DEFAULT_WORLD_DEFINITION.objects
 });
@@ -273,7 +269,7 @@ const initGlobalBackground = () => {
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = WORLD_FLOOR_Y;
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(floor);
+    bgScene.add(floor);
 
     const worldGrid = new THREE.GridHelper(2400, 120, 0x75d7ff, 0x2d4d5f);
     worldGrid.position.copy(WORLD_ORIGIN);
@@ -370,7 +366,7 @@ const initGlobalBackground = () => {
         );
     };
 
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(floorTiles);
+    bgScene.add(floorTiles);
 
     // 原地板黑线网格已被瓷砖阵列的缝隙替代，不再需要 GridHelper
     // const floorGrid = new THREE.GridHelper(4000, 160, 0x111111, 0x111111); // 已停用
@@ -426,7 +422,7 @@ const initGlobalBackground = () => {
     const ceil = new THREE.Mesh(ceilGeo, ceilMat);
     ceil.rotation.x = Math.PI / 2;
     ceil.position.y = 40; 
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(ceil);
+    bgScene.add(ceil);
 
     // 方形吸顶灯阵列（代替原来的网格线）
     // 间距与地板/墙板共用 cellSpacing，三层完全对齐
@@ -483,7 +479,7 @@ const initGlobalBackground = () => {
         }
         ceilLights.instanceMatrix.needsUpdate = true;
     }
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(ceilLights);
+    bgScene.add(ceilLights);
 
     // --- 天窗竖井 / 树阵列参数 ---
     const treeSpacing = SKYLIGHT_PERIOD_X; // 树与树之间的横向间距，严格对齐天窗周期
@@ -529,7 +525,7 @@ const initGlobalBackground = () => {
     const skylightRoof = new THREE.Mesh(ceilGeo, skylightRoofMat);
     skylightRoof.rotation.x = Math.PI / 2;
     skylightRoof.position.y = 40 + shaftHeight;
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightRoof);
+    bgScene.add(skylightRoof);
 
     const skylightSkyRadius = 2200;
     const skylightSkyCenterY = 40 + shaftHeight + 1400;
@@ -541,15 +537,13 @@ const initGlobalBackground = () => {
     });
     const skylightSky = new THREE.Mesh(skylightSkyGeo, skylightSkyMat);
     skylightSky.position.set(0, skylightSkyCenterY, SKYLIGHT_CENTER_Z);
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightSky);
+    bgScene.add(skylightSky);
 
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) {
-        new RGBELoader().load(AssetLibrary.textures.skylightHdr, (hdrTexture) => {
-            hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
-            skylightSkyMat.map = hdrTexture;
-            skylightSkyMat.needsUpdate = true;
-        });
-    }
+    new RGBELoader().load(AssetLibrary.textures.skylightHdr, (hdrTexture) => {
+        hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+        skylightSkyMat.map = hdrTexture;
+        skylightSkyMat.needsUpdate = true;
+    });
     
     // BoxGeometry 面顺序：[+x, -x, +y(顶), -y(底), +z, -z]
     const shaftMats = [
@@ -568,7 +562,7 @@ const initGlobalBackground = () => {
         shaftMesh.position.set(x, 40 + shaftHeight / 2, SKYLIGHT_CENTER_Z);
         skylightShaftsGroup.add(shaftMesh);
     }
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightShaftsGroup);
+    bgScene.add(skylightShaftsGroup);
 
     // --- 天窗顶部聚光灯 ---
     // 光源抬到屋面上方，让视觉上更像自然天光从室外洒下
@@ -596,7 +590,7 @@ const initGlobalBackground = () => {
     // 树放置在 Z=-500, 并且底部紧贴地板 (Y=-5)
     const treesGroup = new THREE.Group();
     const treeSelectables = [];
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(treesGroup);
+    bgScene.add(treesGroup);
 
     const treeWindUniforms = [];
     const configureTreeWindMaterial = (material, mesh, options = {}) => {
@@ -837,7 +831,7 @@ const initGlobalBackground = () => {
     });
     const wall = new THREE.Mesh(wallGeo, wallMat);
     wall.position.set(0, wallCenterY, -895); // 放置在 z=-895，再次往后推移了450单位
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(wall);
+    bgScene.add(wall);
 
     // 墙面板阵列：长方形面板按水平方向排列，仅保留垂直方向缝隙
     // 与天花板灯、地板瓷砖结构对称（InstancedMesh + 跟随相机吸附位移）
@@ -954,7 +948,7 @@ const initGlobalBackground = () => {
     // onBeforeCompile 修改后强制重新编译
     wallPanelFaceMat.needsUpdate = true;
 
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(wallPanels);
+    bgScene.add(wallPanels);
 
     // --- 墙面装饰：著名画作阵列 ---
     const createBgLoader = () => {
@@ -1069,43 +1063,41 @@ const initGlobalBackground = () => {
         setCollisionDebugEnabled(!pickingSystem.isCollisionDebugEnabled());
     });
     setCollisionDebugEnabled(false);
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) {
-        startSceneLoadingItem('runtime:avatars', '角色');
-        createAvatarWorldRuntime({
-            scene: bgScene,
-            createLabel: createBgLabel,
-            createLoader: createBgLoader,
-            focusOffsetZ: BG_FOCUS_CAMERA_OFFSET_Z
-        }).then((runtime) => {
-            if (avatarWorldRuntime) {
-                avatarWorldRuntime.destroy();
-            }
-            unregisterHitTestTargets((target) => target.type === 'avatar');
-            avatarWorldRuntime = runtime;
-            runtime.getEntries().forEach((entry) => {
-                window.bgLabels.push(entry.mesh);
-                registerHitTestTarget(entry.mesh, {
-                    type: 'avatar',
-                    dynamic: true,
-                    ...(entry.config.hitTest || {}),
-                    getColliderObject: () => entry.pickVolume || entry.mesh,
-                    getPreciseRoots: () => [entry.controller.worldObject || entry.mesh]
-                });
-                registerSceneInstance({
-                    objectId: `avatar-${entry.key}`,
-                    root: entry.mesh,
-                    worldObjectId: `avatar-${entry.key}`,
-                    source: 'avatar',
-                    destroy: () => {}
-                });
+    startSceneLoadingItem('runtime:avatars', '角色');
+    createAvatarWorldRuntime({
+        scene: bgScene,
+        createLabel: createBgLabel,
+        createLoader: createBgLoader,
+        focusOffsetZ: BG_FOCUS_CAMERA_OFFSET_Z
+    }).then((runtime) => {
+        if (avatarWorldRuntime) {
+            avatarWorldRuntime.destroy();
+        }
+        unregisterHitTestTargets((target) => target.type === 'avatar');
+        avatarWorldRuntime = runtime;
+        runtime.getEntries().forEach((entry) => {
+            window.bgLabels.push(entry.mesh);
+            registerHitTestTarget(entry.mesh, {
+                type: 'avatar',
+                dynamic: true,
+                ...(entry.config.hitTest || {}),
+                getColliderObject: () => entry.pickVolume || entry.mesh,
+                getPreciseRoots: () => [entry.controller.worldObject || entry.mesh]
             });
-            window.updateAvatarDialogueUi?.();
-            finishSceneLoadingItem('runtime:avatars');
-        }).catch((error) => {
-            console.error('Failed to initialize avatar world runtime:', error);
-            finishSceneLoadingItem('runtime:avatars', '角色加载失败，其他已加载对象仍可点击');
+            registerSceneInstance({
+                objectId: `avatar-${entry.key}`,
+                root: entry.mesh,
+                worldObjectId: `avatar-${entry.key}`,
+                source: 'avatar',
+                destroy: () => {}
+            });
         });
-    }
+        window.updateAvatarDialogueUi?.();
+        finishSceneLoadingItem('runtime:avatars');
+    }).catch((error) => {
+        console.error('Failed to initialize avatar world runtime:', error);
+        finishSceneLoadingItem('runtime:avatars', '角色加载失败，其他已加载对象仍可点击');
+    });
 
     const dedupeByAssetId = (items = []) => {
         const seen = new Set();
@@ -1242,7 +1234,7 @@ const initGlobalBackground = () => {
             destroy: () => {}
         });
     }
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(paintingsGroup);
+    bgScene.add(paintingsGroup);
 
     // 墙面网格骨架 (移除网格，让混凝土纹理更纯粹)
     // 因为这面墙上已经有了贴图带来的分隔缝隙，再叠加上黑色的 GridHelper 会显得杂乱
@@ -1273,9 +1265,9 @@ const initGlobalBackground = () => {
     const animatedShowcaseItems = []; // 保存需要做动画的物品
     const gltfLoader = new GLTFLoader();
     const createProductPickVolume = (targetSize, height = targetSize) => {
-        const width = Math.max(targetSize * 2.8, targetSize + 30);
-        const pickHeight = Math.max(height * 2.4, targetSize + 24);
-        const depth = Math.max(targetSize * 3.2, targetSize + 36);
+        const width = Math.max(targetSize * 1.7, targetSize + 12);
+        const pickHeight = Math.max(height * 1.6, targetSize + 10);
+        const depth = Math.max(targetSize * 2.4, targetSize + 24);
         const geometry = new THREE.BoxGeometry(width, pickHeight, depth);
         const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
         const hitBox = new THREE.Mesh(geometry, material);
@@ -1285,9 +1277,9 @@ const initGlobalBackground = () => {
     const resizeProductPickVolume = (hitBox, targetSize, height = targetSize) => {
         if (!hitBox) return;
         hitBox.geometry.dispose();
-        const width = Math.max(targetSize * 2.8, targetSize + 30);
-        const pickHeight = Math.max(height * 2.4, targetSize + 24);
-        const depth = Math.max(targetSize * 3.2, targetSize + 36);
+        const width = Math.max(targetSize * 1.7, targetSize + 12);
+        const pickHeight = Math.max(height * 1.6, targetSize + 10);
+        const depth = Math.max(targetSize * 2.4, targetSize + 24);
         hitBox.geometry = new THREE.BoxGeometry(width, pickHeight, depth);
     };
 
@@ -1592,7 +1584,7 @@ const initGlobalBackground = () => {
             productIndex: productList.length > 0 ? (c % productList.length) : 0 // 记录产品索引，用于同步旋转
         });
     }
-    if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(showcaseGroup);
+    bgScene.add(showcaseGroup);
 
     // --- 展品交互 / 统一点击检测 ---
     let bgObjectPointerDownX = 0;
@@ -1601,7 +1593,10 @@ const initGlobalBackground = () => {
     const bgObjectSelectWorldPos = new THREE.Vector3();
     let activeBackgroundSelectable = null;
     const getSelectionBoxColor = (type) => {
-        return 0x00ff00;
+        if (type === 'avatar') return 0x7ef2ff;
+        if (type === 'product') return 0xffd36b;
+        if (type === 'painting') return 0xaed0ff;
+        return 0xffffff;
     };
     createSelectionOverlay({
         THREE,
@@ -1618,29 +1613,6 @@ const initGlobalBackground = () => {
         debugLogger.emit({sessionId:"hit-selection-accuracy",runId:"refactor",hypothesisId:"selection-store",location:"talkinghead.js:clearActiveBackgroundSelectable",msg:"[DEBUG] clear selection requested",data:{activeRootName:activeBackgroundSelectable?.name||null,activeWorldObjectId:activeBackgroundSelectable?.userData?.worldObjectId||null,reason}});
         selectionStore.clear(reason);
     };
-    const focusSelectionAlongCurrentView = (focusPoint, selectedObject = null) => {
-        if (!focusPoint) return null;
-        const focusDistance = selectedObject?.userData?.selectableType === 'avatar' ? 55 : 42;
-        const cameraFrom = bgCamera.position.clone();
-        const viewDirection = focusPoint.clone().sub(cameraFrom);
-        if (viewDirection.lengthSq() < 0.0001) return null;
-        viewDirection.normalize();
-        const desiredCamera = focusPoint.clone().addScaledVector(viewDirection, -focusDistance);
-        desiredCamera.y = bgCamera.position.y;
-        const lookDirection = focusPoint.clone().sub(desiredCamera).normalize();
-        const nextYaw = Math.atan2(-lookDirection.x, -lookDirection.z);
-        const nextPitch = Math.asin(THREE.MathUtils.clamp(lookDirection.y, -1, 1));
-        const cameraState = cameraController.setTarget({
-            x: desiredCamera.x,
-            z: desiredCamera.z
-        });
-        window.bgTargetPositionX = cameraState.targetX;
-        window.bgTargetPositionZ = cameraState.targetZ;
-        window.bgTargetYaw = nextYaw;
-        window.bgTargetPitch = nextPitch;
-        return cameraState;
-    };
-    window.focusSelectionAlongCurrentView = focusSelectionAlongCurrentView;
     const setActiveBackgroundSelectable = (object, meta = {}) => {
         if (!object || !object.userData || !object.userData.selectableType) return;
         if (activeBackgroundSelectable === object) return;
@@ -1783,6 +1755,12 @@ const initGlobalBackground = () => {
         if (nodeLoading && !window.renderSceneLoadingNotice?.('对象已选中，可以上传资产替换或直接删除')) {
             nodeLoading.textContent = '对象已选中，可以上传资产替换或直接删除';
         }
+        if (typeof window.focusBackgroundSlot === 'function') {
+            // #region debug-point AFH:pointerup-before-focus
+            debugLogger.emit({sessionId:"avatar-focus-hit-test",runId:"post-fix",hypothesisId:"H1",location:"talkinghead.js:pointerup:beforeFocus",msg:"[DEBUG] selection will request focusBackgroundSlot",data:{selected:{type:object?.userData?.selectableType||null,worldObjectId:sceneObjectId||null,focusZ:object?.userData?.selectableFocusZ??null},focusPoint:{x:Number(bgObjectSelectWorldPos.x.toFixed(2)),y:Number(bgObjectSelectWorldPos.y.toFixed(2)),z:Number(bgObjectSelectWorldPos.z.toFixed(2))},cameraBefore:{x:Number(bgCamera.position.x.toFixed(2)),y:Number(bgCamera.position.y.toFixed(2)),z:Number(bgCamera.position.z.toFixed(2)),targetX:window.bgTargetPositionX??null,targetZ:window.bgTargetPositionZ??null}},ts:Date.now()});
+            // #endregion
+            window.focusBackgroundSlot(bgObjectSelectWorldPos.x, object.userData.selectableFocusZ);
+        }
     }, { capture: true });
 
     // 4. 灯光系统
@@ -1832,9 +1810,9 @@ const initGlobalBackground = () => {
         return lastAnchor.fogTargetZ;
     };
 
-    // 背景纵深范围限制：已解除，允许相机自由移动（无限空间）。
-    const BG_Z_MAX = Infinity;
-    const BG_Z_MIN = -Infinity;
+    // 背景纵深范围限制：[BG_Z_MIN, BG_Z_MAX]，避免穿出墙体或退到天上。
+    const BG_Z_MAX = 40;     // 默认远景位置（与 bgCamera 初始 z 一致）
+    const BG_Z_MIN = -870;   // 接近墙面（墙在 z = -895），保留一点余量避免穿模
     const cameraController = createCameraController({
         camera: bgCamera,
         minZ: BG_Z_MIN,
@@ -2404,12 +2382,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             clearActiveBackgroundSelectable(reason);
         },
         focusWorldObject: (worldObject) => {
-            if (worldObject && typeof window.focusSelectionAlongCurrentView === 'function') {
-                const sceneRecord = sceneObjectRegistry.getByWorldObjectId(worldObject.id);
-                const focusPoint = sceneRecord?.root
-                    ? getSelectableFocusPoint(sceneRecord.root) || sceneRecord.root.position
-                    : new THREE.Vector3(worldObject.position.x, worldObject.position.y, worldObject.position.z);
-                window.focusSelectionAlongCurrentView(focusPoint, sceneRecord?.root || null);
+            if (worldObject && typeof window.focusBackgroundSlot === 'function') {
+                window.focusBackgroundSlot(worldObject.position.x, worldObject.position.z + 40);
             }
         },
         updateSelectedAvatarEntry,

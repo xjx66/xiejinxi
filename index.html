@@ -24,26 +24,55 @@
     <div id="offline-indicator"></div>
     <div class="container" style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; margin: 0; overflow: hidden;">
         
-        <section class="talkinghead-section" style="width: 100%; max-width: 960px; position: relative; height: 800px; /* overflow: hidden; Removed to show models outside container */">
-            <div id="carousel-turntable" style="width: 100%; height: 100%; position: absolute; cursor: pointer;">
-                <!-- JS will inject model containers here -->
+        <div id="avatar-dialogue-layer" aria-live="polite">
+            <div id="avatar-dialogue-panel">
+                <div id="avatar-dialogue-title">AI 操作面板</div>
+                <div id="avatar-dialogue-hint">点击一个坐标或对象，锁定上下文后再上传资产并提交。</div>
+                <div id="ai-action-mode">模式：未选择</div>
+                <div id="ai-context-summary">
+                    <div class="ai-context-row">
+                        <span class="ai-context-label">坐标</span>
+                        <span id="ai-context-coordinate">未锁定</span>
+                    </div>
+                    <div class="ai-context-row">
+                        <span class="ai-context-label">目标</span>
+                        <span id="ai-context-target">空白点位</span>
+                    </div>
+                </div>
+                <div id="ai-asset-summary">
+                    <div class="ai-asset-title">资产信息</div>
+                    <div id="ai-asset-fields">未选中对象</div>
+                </div>
+                <div id="ai-video-controls">
+                    <div class="ai-asset-title">视频控制</div>
+                    <button id="ai-video-toggle" type="button">播放</button>
+                    <input id="ai-video-progress" type="range" min="0" max="1000" value="0">
+                    <div id="ai-video-time">00:00 / 00:00</div>
+                </div>
+                <div id="avatar-dialogue-controls">
+                    <textarea id="ai-prompt-text" autocomplete="off" placeholder="输入你的意图，例如：在这里插入一个悬浮视频屏，或把这个对象替换成玻璃雕塑。"></textarea>
+                </div>
+                <div id="ai-upload-section">
+                    <label id="ai-upload-label" for="ai-upload-input">上传资产</label>
+                    <input id="ai-upload-input" type="file" accept=".png,.jpg,.jpeg,.webp,.mp4,.glb">
+                    <div id="ai-upload-preview">未选择文件</div>
+                </div>
+                <div id="ai-action-buttons">
+                    <button id="ai-submit" type="button">确认执行</button>
+                    <button id="ai-delete" type="button">删除对象</button>
+                    <button id="ai-reset" type="button">清空上下文</button>
+                </div>
+                <div id="avatar-dialogue-loading">Waiting for input...</div>
             </div>
-            
-            <!-- 将输入框容器改为绝对定位，叠加在 talkinghead 上方 -->
-            <div id="talkinghead-input-container" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; justify-content: center; z-index: 10; transition: opacity 0.3s ease;">
-                <input type="text" id="talkinghead-text" autocomplete="off" placeholder="say something..." style="width: 200px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); color: white; font-size: 16px; transition: all 0.3s ease; backdrop-filter: blur(5px);">
-                <button id="talkinghead-speak" style="display: none; padding: 12px 24px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; cursor: pointer; font-size: 16px; transition: all 0.3s;">说话</button>
-            </div>
-            <div id="talkinghead-loading" style="display: none; text-align: center; color: rgba(255,255,255,0.6); margin-top: 10px; position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);"></div>
-        </section>
+        </div>
 
-        <section class="decals-section" style="width: 100%; max-width: 1200px;">
-            <div id="decals-container" style="width: 100%; height: 900px;"></div>
-        </section>
-
-        <section class="robot-section" style="width: 100%; max-width: 1200px;">
-            <div id="robot-container" style="width: 100%; height: 600px; position: relative;"></div>
-        </section>
+        <div id="world-coordinate-hud" aria-live="polite">
+            <div id="world-coordinate-title">World Origin O(0,0,0)</div>
+            <div id="world-coordinate-value">X 0.00  Y 0.00  Z 0.00</div>
+            <div id="world-click-coordinate-label">Pick</div>
+            <div id="world-click-coordinate-value">X 0.00  Y 0.00  Z 0.00</div>
+        </div>
+        <button id="collision-debug-toggle" type="button">Collision Off</button>
 
         <button id="themeToggle" class="theme-toggle">🌖</button>
 
@@ -54,8 +83,6 @@
 
     </div>
     <script src="script.js?v=2"></script>
-    <script type="module" src="decals.js?v=3"></script>
-    <script type="module" src="robot.js?v=3"></script>
     <script type="module" src="talkinghead.js?v=3"></script>
 </body>
 </html>
