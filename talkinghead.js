@@ -1854,6 +1854,11 @@ const initGlobalBackground = () => {
 
         avatarWorldRuntime?.update(deltaSeconds);
 
+        // 推进所有用户上传对象（带 GLB 内置动画）的 AnimationMixer
+        sceneObjectRegistry.forEachRecord((record) => {
+            record.mixer?.update(deltaSeconds);
+        });
+
         // 大黄和X角色的右键提示图标保持固定显示，不再随着推进淡出
         document.querySelectorAll('.mouse-click-anim').forEach(anim => {
             if (anim.parentElement) {

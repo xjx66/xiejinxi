@@ -815,6 +815,27 @@ body.scene-pointer-locked #cursor-follower {
     pointer-events: none;
 }
 
+#ai-animation-controls {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(0, 110, 200, 0.08);
+    border: 1px solid rgba(0, 110, 200, 0.18);
+}
+
+#ai-animation-clip,
+#ai-animation-play {
+    min-height: 30px;
+    border: 1px solid rgba(0, 110, 200, 0.24);
+    border-radius: 8px;
+    background: rgba(0, 110, 200, 0.1);
+    color: rgba(0, 44, 70, 0.92);
+    font-size: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
 #ai-video-toggle,
 #ai-video-progress {
     pointer-events: auto;

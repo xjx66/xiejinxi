@@ -33,6 +33,9 @@ export const createAiPanelController = ({
     const nodeVideoToggle = document.getElementById('ai-video-toggle');
     const nodeVideoProgress = document.getElementById('ai-video-progress');
     const nodeVideoTime = document.getElementById('ai-video-time');
+    const nodeAnimationControls = document.getElementById('ai-animation-controls');
+    const nodeAnimationClip = document.getElementById('ai-animation-clip');
+    const nodeAnimationPlay = document.getElementById('ai-animation-play');
     const nodePrompt = document.getElementById('ai-prompt-text');
     const nodeUpload = document.getElementById('ai-upload-input');
     const nodeUploadPreview = document.getElementById('ai-upload-preview');
@@ -79,6 +82,66 @@ export const createAiPanelController = ({
             id: objectInfo.id || asset?.id || selectedObjectId || '',
             url: objectInfo.url || asset?.url || ''
         };
+    };
+
+    const getSelectedAnimationRecord = (state = aiActionContext.getState()) => {
+        const selectedObjectId = state.selectedObjectId || selectionStore.getState().selectedWorldObjectId;
+        if (!selectedObjectId) return null;
+        const record = sceneObjectRegistry.getByWorldObjectId(selectedObjectId);
+        if (!record || !Array.isArray(record.clipNames) || record.clipNames.length === 0) return null;
+        return { record, worldObjectId: selectedObjectId };
+    };
+
+    const renderAnimationControls = (state) => {
+        if (!nodeAnimationControls || !nodeAnimationClip) return;
+        const ctx = getSelectedAnimationRecord(state);
+        if (!ctx) {
+            nodeAnimationControls.style.display = 'none';
+            return;
+        }
+        const { record, worldObjectId } = ctx;
+        const wo = worldState.getWorldObjectById?.(worldObjectId);
+        const lastAnimation = wo?.metadata?.lastAnimation || '';
+        const currentValue = nodeAnimationClip.value;
+        // 重新填充选项（仅当 clip 列表与当前不一致时）
+        const desired = record.clipNames.join('|');
+        if (nodeAnimationClip.dataset.clipsKey !== desired + '@' + worldObjectId) {
+            nodeAnimationClip.replaceChildren(...record.clipNames.map((name) => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                return opt;
+            }));
+            nodeAnimationClip.dataset.clipsKey = desired + '@' + worldObjectId;
+            // 默认选中：上次播过的；否则保留上次输入；否则第一项
+            const initial = (lastAnimation && record.clipNames.includes(lastAnimation))
+                ? lastAnimation
+                : (record.clipNames.includes(currentValue) ? currentValue : record.clipNames[0]);
+            nodeAnimationClip.value = initial;
+        }
+        nodeAnimationControls.style.display = 'flex';
+    };
+
+    const playSelectedAnimation = () => {
+        const ctx = getSelectedAnimationRecord();
+        if (!ctx) return;
+        const { record, worldObjectId } = ctx;
+        const name = nodeAnimationClip?.value;
+        if (!name) return;
+        const ok = record.playClip?.(name);
+        if (!ok) {
+            if (nodeLoading) nodeLoading.textContent = `动作不存在：${name}`;
+            return;
+        }
+        // 持久化最后播放的动作（刷新后恢复）
+        const wo = worldState.getWorldObjectById?.(worldObjectId);
+        if (wo && worldState.upsertWorldObject) {
+            worldState.upsertWorldObject({
+                ...wo,
+                metadata: { ...(wo.metadata || {}), lastAnimation: name }
+            });
+        }
+        if (nodeLoading) nodeLoading.textContent = `已播放动作：${name}`;
     };
 
     const renderAssetInfo = (state) => {
@@ -168,6 +231,7 @@ export const createAiPanelController = ({
             : '空白点位';
         renderAssetInfo(state);
         videoControlsController.render();
+        renderAnimationControls(state);
         if (nodePrompt.value !== state.prompt) {
             nodePrompt.value = state.prompt || '';
         }
@@ -323,6 +387,9 @@ export const createAiPanelController = ({
         aiActionContext.clear();
         if (nodeUpload) nodeUpload.value = '';
         if (nodeLoading) nodeLoading.textContent = '上下文已清空';
+    });
+    addListener(nodeAnimationPlay, 'click', () => {
+        playSelectedAnimation();
     });
     disposers.push(aiActionContext.subscribe(render));
     disposers.push(selectionStore.subscribe(render));

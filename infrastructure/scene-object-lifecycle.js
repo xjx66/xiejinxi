@@ -15,7 +15,7 @@ export const createSceneObjectLifecycle = ({
         root.removeFromParent();
     };
 
-    const registerSceneInstance = ({ objectId, root, destroy, worldObjectId = objectId, source = 'runtime' }) => {
+    const registerSceneInstance = ({ objectId, root, destroy, instance, worldObjectId = objectId, source = 'runtime' }) => {
         root.userData = {
             ...root.userData,
             worldObjectId: objectId
@@ -25,6 +25,10 @@ export const createSceneObjectLifecycle = ({
             root,
             source,
             backingWorldObjectId: worldObjectId,
+            // 透传 GLB 自带动画能力（不带动画的对象就是 undefined / 空数组）
+            mixer: instance?.mixer,
+            clipNames: instance?.clipNames,
+            playClip: instance?.playClip,
             destroy: () => {
                 destroy?.();
                 cleanupSceneRoot(root);
@@ -38,6 +42,7 @@ export const createSceneObjectLifecycle = ({
             objectId: worldObject.id,
             root: instance.root,
             destroy: instance.destroy,
+            instance,
             worldObjectId: worldObject.id,
             source: 'managed'
         });

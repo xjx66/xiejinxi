@@ -34,6 +34,9 @@ export const createSceneObjectRegistry = () => {
             if (!root?.uuid) return null;
             return byRootUuid.get(root.uuid) || null;
         },
+        forEachRecord(fn) {
+            byWorldObjectId.forEach((record) => fn(record));
+        },
         destroyWorldObject(worldObjectId) {
             const record = this.unregisterByWorldObjectId(worldObjectId);
             record?.destroy?.();

@@ -23,6 +23,29 @@ export const createModelSceneObject = ({
     let isLoaded = false;
     const gltfLoader = new GLTFLoader();
 
+    // GLB 内置动画：mixer + 按名字索引的 clips。加载完成后填入。
+    let mixer = null;
+    const clipsByName = new Map();
+    const clipNames = [];
+    let activeAction = null;
+
+    const playClip = (name) => {
+        if (!mixer) return false;
+        const clip = clipsByName.get(name);
+        if (!clip) return false;
+        if (activeAction) {
+            activeAction.stop();
+            activeAction = null;
+        }
+        const action = mixer.clipAction(clip);
+        action.reset();
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+        action.play();
+        activeAction = action;
+        return true;
+    };
+
     gltfLoader.load(asset.url, (gltf) => {
         const model = gltf.scene;
         const box = new THREE.Box3().setFromObject(model);
@@ -39,6 +62,26 @@ export const createModelSceneObject = ({
         isLoaded = true;
         if (loader.text) loader.text.innerText = '100%';
         if (loader.container) loader.container.style.display = 'none';
+
+        // 收集 GLB 自带动画
+        const animations = Array.isArray(gltf.animations) ? gltf.animations : [];
+        if (animations.length > 0) {
+            mixer = new THREE.AnimationMixer(model);
+            animations.forEach((clip) => {
+                if (!clip || !clip.name) return;
+                clipsByName.set(clip.name, clip);
+                clipNames.push(clip.name);
+            });
+            // 把动画能力同步到 root.userData，方便 registry / 面板从 record 之外读取
+            root.userData.clipNames = clipNames.slice();
+            root.userData.mixer = mixer;
+            root.userData.playClip = playClip;
+            // 持久化恢复：上次播过的动作直接重放，clampWhenFinished 会停在最后一帧
+            const last = worldObject.metadata?.lastAnimation;
+            if (last && clipsByName.has(last)) {
+                playClip(last);
+            }
+        }
     }, (xhr) => {
         if (xhr.lengthComputable && loader.text) {
             loader.text.innerText = `${Math.round((xhr.loaded / xhr.total) * 100)}%`;
@@ -81,7 +124,15 @@ export const createModelSceneObject = ({
 
     return {
         root,
+        // GLB 自带动画暴露给上层（registry/AI 面板）；未带动画时为空数组/null。
+        get clipNames() { return clipNames.slice(); },
+        get mixer() { return mixer; },
+        playClip,
         destroy() {
+            if (mixer) {
+                mixer.stopAllAction();
+                mixer.uncacheRoot(mixer.getRoot?.() || root);
+            }
             root.removeFromParent();
             label?.remove?.();
             loader?.container?.remove?.();
