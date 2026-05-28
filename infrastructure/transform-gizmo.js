@@ -45,10 +45,33 @@ export const createTransformGizmo = ({
     gizmoRoot.userData.selectionOverlay = true;
     scene.add(gizmoRoot);
 
+    // 旋转环居中；平移箭头分布到 bbox 六面，分别管理便于不同的位置/缩放策略。
+    const rotateGroup = new THREE.Group();
+    rotateGroup.name = 'transform-gizmo-rotate-group';
+    rotateGroup.userData.selectionOverlay = true;
+    gizmoRoot.add(rotateGroup);
+
+    const translateGroup = new THREE.Group();
+    translateGroup.name = 'transform-gizmo-translate-group';
+    translateGroup.userData.selectionOverlay = true;
+    gizmoRoot.add(translateGroup);
+
     const handleMeshes = []; // 用于 raycaster.intersectObjects
     let currentTarget = null;
     let drag = null;
     let rafId = null;
+    // Hover 高亮状态（必须在 hide() 之前声明，避免订阅回调首发时 TDZ）
+    const HOVER_COLOR = 0xffff66;
+    let hoveredHandle = null;
+    const setHandleHover = (handle, hovered) => {
+        const meta = handle?.userData?.gizmoHandle;
+        if (!meta || !meta.visualMeshes) return;
+        const targetColor = hovered ? HOVER_COLOR : meta.color;
+        meta.visualMeshes.forEach((mesh) => {
+            mesh.material.color.setHex(targetColor);
+            mesh.scale.setScalar(hovered ? 1.25 : 1.0);
+        });
+    };
 
     const isMovable = (root) => {
         if (!root) return false;
@@ -59,16 +82,20 @@ export const createTransformGizmo = ({
         return Boolean(worldState.getWorldObjectById?.(id));
     };
 
-    const disposeChildren = () => {
-        const toRemove = [...gizmoRoot.children];
-        toRemove.forEach((child) => {
-            gizmoRoot.remove(child);
+    const clearGroupChildren = (g) => {
+        while (g.children.length) {
+            const child = g.children.pop();
             child.traverse?.((node) => {
                 if (node.geometry) node.geometry.dispose?.();
                 const mats = Array.isArray(node.material) ? node.material : [node.material];
                 mats.forEach((m) => m && m.dispose?.());
             });
-        });
+        }
+    };
+
+    const disposeChildren = () => {
+        clearGroupChildren(rotateGroup);
+        clearGroupChildren(translateGroup);
         handleMeshes.length = 0;
     };
 
@@ -95,9 +122,9 @@ export const createTransformGizmo = ({
         });
     };
 
-    const buildTranslateHandle = (axis) => {
+    const buildTranslateArrow = (axis, sign) => {
         const group = new THREE.Group();
-        group.name = `gizmo-translate-${axis}`;
+        group.name = `gizmo-translate-${axis}${sign > 0 ? '+' : '-'}`;
         const color = AXIS_COLORS[axis];
         const visualMeshes = [];
 
@@ -119,11 +146,12 @@ export const createTransformGizmo = ({
         collider.position.y = colliderLen / 2;
         group.add(collider);
 
-        // 把手默认沿 +Y；按 axis 旋到目标方向
-        if (axis === 'x') group.rotation.z = -Math.PI / 2;
-        else if (axis === 'z') group.rotation.x = Math.PI / 2;
+        // 把手默认沿 +Y；按 (axis, sign) 旋到目标方向（朝外）
+        if (axis === 'x') group.rotation.z = sign > 0 ? -Math.PI / 2 : Math.PI / 2;
+        else if (axis === 'y') group.rotation.z = sign > 0 ? 0 : Math.PI;
+        else if (axis === 'z') group.rotation.x = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
 
-        group.userData.gizmoHandle = { mode: 'translate', axis, color, visualMeshes };
+        group.userData.gizmoHandle = { mode: 'translate', axis, sign, color, visualMeshes };
         tagOverlay(group);
         handleMeshes.push(group);
         return group;
@@ -159,9 +187,18 @@ export const createTransformGizmo = ({
         disposeChildren();
         const box = getInteractionBox(root);
         if (!box) return false;
+        // 旋转环居中（3 个）
         ['x', 'y', 'z'].forEach((axis) => {
-            gizmoRoot.add(buildTranslateHandle(axis));
-            gizmoRoot.add(buildRotateHandle(axis));
+            rotateGroup.add(buildRotateHandle(axis));
+        });
+        // 平移箭头（6 个，分布到 bbox 六面，本步只 add，位置在 placeTranslateArrows 中设）
+        const dirs = [
+            ['x',  1], ['x', -1],
+            ['y',  1], ['y', -1],
+            ['z',  1], ['z', -1]
+        ];
+        dirs.forEach(([axis, sign]) => {
+            translateGroup.add(buildTranslateArrow(axis, sign));
         });
         return true;
     };
@@ -172,16 +209,39 @@ export const createTransformGizmo = ({
         return Math.max(d * SCREEN_SIZE_FACTOR, SCREEN_SIZE_MIN);
     };
 
+    const placeTranslateArrows = (size, scale) => {
+        const half = { x: size.x / 2, y: size.y / 2, z: size.z / 2 };
+        const arrowLen = (TR_SHAFT_LEN + TR_CONE_LEN) * scale;
+        const gap = arrowLen * 0.05;
+        translateGroup.children.forEach((arrow) => {
+            const meta = arrow.userData?.gizmoHandle;
+            if (!meta) return;
+            const { axis, sign } = meta;
+            const offset = half[axis] + gap;
+            arrow.position.set(
+                axis === 'x' ? sign * offset : 0,
+                axis === 'y' ? sign * offset : 0,
+                axis === 'z' ? sign * offset : 0
+            );
+            arrow.scale.setScalar(scale);
+        });
+    };
+
     const updateGizmoPosition = () => {
         if (!currentTarget) return;
         const box = getInteractionBox(currentTarget);
         if (!box) return;
         const center = new THREE.Vector3();
         box.getCenter(center);
+        const size = new THREE.Vector3();
+        box.getSize(size);
         gizmoRoot.position.copy(center);
         gizmoRoot.rotation.set(0, 0, 0); // 世界对齐
+        gizmoRoot.scale.setScalar(1);
+
         const s = computeScreenScale();
-        gizmoRoot.scale.setScalar(s);
+        rotateGroup.scale.setScalar(s);
+        placeTranslateArrows(size, s);
     };
 
     const showFor = (root) => {
@@ -293,20 +353,7 @@ export const createTransformGizmo = ({
         return handleRaycaster.ray;
     };
 
-    // ========== Hover 高亮 ==========
-    const HOVER_COLOR = 0xffff66; // 鲜亮黄
-    let hoveredHandle = null;
-
-    const setHandleHover = (handle, hovered) => {
-        const meta = handle?.userData?.gizmoHandle;
-        if (!meta || !meta.visualMeshes) return;
-        const targetColor = hovered ? HOVER_COLOR : meta.color;
-        meta.visualMeshes.forEach((mesh) => {
-            mesh.material.color.setHex(targetColor);
-            mesh.scale.setScalar(hovered ? 1.25 : 1.0);
-        });
-    };
-
+    // ========== Hover 高亮（updateHover/onHoverMove 注册）==========
     const updateHover = (clientX, clientY) => {
         if (drag) return; // 拖拽中不更新 hover
         const picked = pickHandle(clientX, clientY);
