@@ -839,6 +839,7 @@ body.scene-pointer-locked #cursor-follower {
     font-size: 12px;
     padding: 4px 10px;
     cursor: pointer;
+    pointer-events: auto;
 }
 
 .ai-animation-item:hover {
