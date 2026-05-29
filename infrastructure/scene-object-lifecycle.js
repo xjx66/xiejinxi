@@ -25,10 +25,10 @@ export const createSceneObjectLifecycle = ({
             root,
             source,
             backingWorldObjectId: worldObjectId,
-            // 透传 GLB 自带动画能力（不带动画的对象就是 undefined / 空数组）
-            mixer: instance?.mixer,
-            clipNames: instance?.clipNames,
-            playClip: instance?.playClip,
+            // GLB 自带动画能力——用 getter 透传，避免注册时 instance 还在异步加载（clipNames 尚未填充）。
+            get mixer() { return instance?.mixer; },
+            get clipNames() { return instance?.clipNames; },
+            playClip: (name) => instance?.playClip?.(name),
             destroy: () => {
                 destroy?.();
                 cleanupSceneRoot(root);

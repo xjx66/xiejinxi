@@ -34,8 +34,7 @@ export const createAiPanelController = ({
     const nodeVideoProgress = document.getElementById('ai-video-progress');
     const nodeVideoTime = document.getElementById('ai-video-time');
     const nodeAnimationControls = document.getElementById('ai-animation-controls');
-    const nodeAnimationClip = document.getElementById('ai-animation-clip');
-    const nodeAnimationPlay = document.getElementById('ai-animation-play');
+    const nodeAnimationList = document.getElementById('ai-animation-list');
     const nodePrompt = document.getElementById('ai-prompt-text');
     const nodeUpload = document.getElementById('ai-upload-input');
     const nodeUploadPreview = document.getElementById('ai-upload-preview');
@@ -93,7 +92,7 @@ export const createAiPanelController = ({
     };
 
     const renderAnimationControls = (state) => {
-        if (!nodeAnimationControls || !nodeAnimationClip) return;
+        if (!nodeAnimationControls || !nodeAnimationList) return;
         const ctx = getSelectedAnimationRecord(state);
         if (!ctx) {
             nodeAnimationControls.style.display = 'none';
@@ -102,31 +101,36 @@ export const createAiPanelController = ({
         const { record, worldObjectId } = ctx;
         const wo = worldState.getWorldObjectById?.(worldObjectId);
         const lastAnimation = wo?.metadata?.lastAnimation || '';
-        const currentValue = nodeAnimationClip.value;
-        // 重新填充选项（仅当 clip 列表与当前不一致时）
         const desired = record.clipNames.join('|');
-        if (nodeAnimationClip.dataset.clipsKey !== desired + '@' + worldObjectId) {
-            nodeAnimationClip.replaceChildren(...record.clipNames.map((name) => {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = name;
-                return opt;
+        const key = desired + '@' + worldObjectId;
+        if (nodeAnimationList.dataset.clipsKey !== key) {
+            nodeAnimationList.replaceChildren(...record.clipNames.map((name) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'ai-animation-item';
+                btn.textContent = name;
+                btn.dataset.clipName = name;
+                if (name === lastAnimation) btn.classList.add('is-active');
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    playSelectedAnimation(name);
+                });
+                return btn;
             }));
-            nodeAnimationClip.dataset.clipsKey = desired + '@' + worldObjectId;
-            // 默认选中：上次播过的；否则保留上次输入；否则第一项
-            const initial = (lastAnimation && record.clipNames.includes(lastAnimation))
-                ? lastAnimation
-                : (record.clipNames.includes(currentValue) ? currentValue : record.clipNames[0]);
-            nodeAnimationClip.value = initial;
+            nodeAnimationList.dataset.clipsKey = key;
+        } else {
+            // 仅刷新 active 高亮
+            nodeAnimationList.querySelectorAll('.ai-animation-item').forEach((btn) => {
+                btn.classList.toggle('is-active', btn.dataset.clipName === lastAnimation);
+            });
         }
         nodeAnimationControls.style.display = 'flex';
     };
 
-    const playSelectedAnimation = () => {
+    const playSelectedAnimation = (name) => {
         const ctx = getSelectedAnimationRecord();
         if (!ctx) return;
         const { record, worldObjectId } = ctx;
-        const name = nodeAnimationClip?.value;
         if (!name) return;
         const ok = record.playClip?.(name);
         if (!ok) {
@@ -142,6 +146,12 @@ export const createAiPanelController = ({
             });
         }
         if (nodeLoading) nodeLoading.textContent = `已播放动作：${name}`;
+        // 刷新高亮
+        if (nodeAnimationList) {
+            nodeAnimationList.querySelectorAll('.ai-animation-item').forEach((btn) => {
+                btn.classList.toggle('is-active', btn.dataset.clipName === name);
+            });
+        }
     };
 
     const renderAssetInfo = (state) => {
@@ -388,8 +398,10 @@ export const createAiPanelController = ({
         if (nodeUpload) nodeUpload.value = '';
         if (nodeLoading) nodeLoading.textContent = '上下文已清空';
     });
-    addListener(nodeAnimationPlay, 'click', () => {
-        playSelectedAnimation();
+    // 防止按钮列表的 pointer 事件冒泡到 window 触发场景选中清除或 pointer-lock
+    const stopBubble = (e) => { e.stopPropagation(); };
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach((type) => {
+        addListener(nodeAnimationControls, type, stopBubble);
     });
     disposers.push(aiActionContext.subscribe(render));
     disposers.push(selectionStore.subscribe(render));

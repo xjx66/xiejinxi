@@ -81,6 +81,8 @@ export const createModelSceneObject = ({
             if (last && clipsByName.has(last)) {
                 playClip(last);
             }
+            // GLB 异步加载完才知道有哪些动画——通知 AI 面板重渲染下拉
+            window.updateAvatarDialogueUi?.();
         }
     }, (xhr) => {
         if (xhr.lengthComputable && loader.text) {

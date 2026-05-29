@@ -824,16 +824,31 @@ body.scene-pointer-locked #cursor-follower {
     border: 1px solid rgba(0, 110, 200, 0.18);
 }
 
-#ai-animation-clip,
-#ai-animation-play {
-    min-height: 30px;
+#ai-animation-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ai-animation-item {
+    min-height: 28px;
     border: 1px solid rgba(0, 110, 200, 0.24);
     border-radius: 8px;
     background: rgba(0, 110, 200, 0.1);
     color: rgba(0, 44, 70, 0.92);
     font-size: 12px;
-    padding: 4px 8px;
+    padding: 4px 10px;
     cursor: pointer;
+}
+
+.ai-animation-item:hover {
+    background: rgba(0, 110, 200, 0.18);
+}
+
+.ai-animation-item.is-active {
+    background: rgba(0, 110, 200, 0.32);
+    border-color: rgba(0, 110, 200, 0.5);
+    font-weight: 700;
 }
 
 #ai-video-toggle,
