@@ -25,11 +25,41 @@ export const createModelSceneObject = ({
 
     // GLB 内置动画：mixer + 按名字索引的 clips。加载完成后填入。
     let mixer = null;
+    let loadedModel = null; // gltf.scene，含骨架；用于按需创建 mixer / 读骨骼
     const clipsByName = new Map();
     const clipNames = [];
     let activeAction = null;
 
-    const playClip = (name) => {
+    // 没有自带动画的绑骨模型也能播放：按需在已加载模型上创建 mixer，并同步到 root.userData 供动画循环更新。
+    const ensureMixer = () => {
+        if (!mixer && loadedModel) {
+            mixer = new THREE.AnimationMixer(loadedModel);
+            root.userData.mixer = mixer;
+        }
+        return mixer;
+    };
+
+    const getBones = () => {
+        const bones = [];
+        loadedModel?.traverse((o) => { if (o.isBone) bones.push(o); });
+        return bones;
+    };
+
+    // 播放一段在外部构造好的 AnimationClip（用于 agent 现场创作的骨骼动作）。
+    const playClipObject = (clip, { loop = true } = {}) => {
+        const m = ensureMixer();
+        if (!m || !clip) return false;
+        if (activeAction) { activeAction.stop(); activeAction = null; }
+        const action = m.clipAction(clip);
+        action.reset();
+        action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+        action.clampWhenFinished = !loop;
+        action.play();
+        activeAction = action;
+        return true;
+    };
+
+    const playClip = (name, { loop = false } = {}) => {
         if (!mixer) return false;
         const clip = clipsByName.get(name);
         if (!clip) return false;
@@ -39,15 +69,25 @@ export const createModelSceneObject = ({
         }
         const action = mixer.clipAction(clip);
         action.reset();
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
+        if (loop) {
+            action.setLoop(THREE.LoopRepeat, Infinity);
+            action.clampWhenFinished = false;
+        } else {
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+        }
         action.play();
         activeAction = action;
         return true;
     };
 
+    const stopClip = () => {
+        if (activeAction) { activeAction.stop(); activeAction = null; }
+    };
+
     gltfLoader.load(asset.url, (gltf) => {
         const model = gltf.scene;
+        loadedModel = model;
         const box = new THREE.Box3().setFromObject(model);
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
@@ -130,6 +170,9 @@ export const createModelSceneObject = ({
         get clipNames() { return clipNames.slice(); },
         get mixer() { return mixer; },
         playClip,
+        stopClip,
+        getBones,
+        playClipObject,
         destroy() {
             if (mixer) {
                 mixer.stopAllAction();

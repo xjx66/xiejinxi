@@ -9,12 +9,12 @@ export const DEFAULT_CAPABILITIES = {
     editMaterial: false
 };
 
-export const normalizeCapabilities = ({ asset = {}, template = {}, worldObject = {} } = {}) => ({
+export const normalizeCapabilities = ({ asset, template, worldObject } = {}) => ({
     ...DEFAULT_CAPABILITIES,
-    ...(template.capabilities || {}),
-    ...(asset.capabilities || {}),
-    ...(worldObject.capabilities || {}),
-    ...(worldObject.metadata?.capabilities || {})
+    ...(template?.capabilities || {}),
+    ...(asset?.capabilities || {}),
+    ...(worldObject?.capabilities || {}),
+    ...(worldObject?.metadata?.capabilities || {})
 });
 
 export const hasCapability = (capabilities, key) => Boolean(capabilities?.[key]);

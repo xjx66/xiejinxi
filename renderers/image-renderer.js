@@ -54,7 +54,9 @@ export const createImageSceneObject = ({
         emissive: 0xffffff,
         emissiveMap: texture,
         emissiveIntensity: 0.1,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        transparent: true, // 支持带透明通道的图（如裁剪成圆形/异形的 PNG）
+        alphaTest: 0.05
     });
     const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
     canvasMesh.position.z = imageDepthOffset;

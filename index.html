@@ -27,6 +27,12 @@
         <div id="avatar-dialogue-layer" aria-live="polite">
             <div id="avatar-dialogue-panel">
                 <div id="avatar-dialogue-title">AI 操作面板</div>
+                <div id="ai-conversation-bar">
+                    <button id="ai-conv-new" type="button">＋ 新建</button>
+                    <div id="ai-conv-current" title="当前对话">新对话</div>
+                    <button id="ai-conv-history" type="button">历史 ▾</button>
+                </div>
+                <div id="ai-conv-list" style="display:none;"></div>
                 <div id="avatar-dialogue-hint">点击一个坐标或对象，锁定上下文后再上传资产并提交。</div>
                 <div id="ai-action-mode">模式：未选择</div>
                 <div id="ai-context-summary">
@@ -53,6 +59,10 @@
                     <div class="ai-asset-title">模型动作</div>
                     <div id="ai-animation-list"></div>
                 </div>
+                <div id="ai-motion-controls" style="display:none;">
+                    <div class="ai-asset-title">运动轨迹</div>
+                    <button id="ai-motion-toggle" type="button">▶ 播放</button>
+                </div>
                 <div id="avatar-dialogue-controls">
                     <textarea id="ai-prompt-text" autocomplete="off" placeholder="输入你的意图，例如：在这里插入一个悬浮视频屏，或把这个对象替换成玻璃雕塑。"></textarea>
                 </div>
@@ -67,6 +77,10 @@
                     <button id="ai-reset" type="button">清空上下文</button>
                 </div>
                 <div id="avatar-dialogue-loading">Waiting for input...</div>
+                <div id="ai-agent-reply" style="display:none;">
+                    <div class="ai-asset-title">AI 回复</div>
+                    <div id="ai-agent-reply-body"></div>
+                </div>
             </div>
         </div>
 

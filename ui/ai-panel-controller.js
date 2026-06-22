@@ -8,6 +8,10 @@ export const createAiPanelController = ({
     selectionStore,
     sceneObjectRegistry,
     aiOrchestrator,
+    actionExecutor,
+    agentRuntime,
+    motionPlayer,
+    conversationStore,
     createAssetFromUpload,
     uploadRuntime,
     createWorldObjectFromAsset,
@@ -24,6 +28,12 @@ export const createAiPanelController = ({
     const nodeTitle = document.getElementById('avatar-dialogue-title');
     const nodeHint = document.getElementById('avatar-dialogue-hint');
     const nodeLoading = document.getElementById('avatar-dialogue-loading');
+    const nodeAgentReply = document.getElementById('ai-agent-reply');
+    const nodeAgentReplyBody = document.getElementById('ai-agent-reply-body');
+    const nodeConvNew = document.getElementById('ai-conv-new');
+    const nodeConvCurrent = document.getElementById('ai-conv-current');
+    const nodeConvHistory = document.getElementById('ai-conv-history');
+    const nodeConvList = document.getElementById('ai-conv-list');
     const nodeMode = document.getElementById('ai-action-mode');
     const nodeCoordinate = document.getElementById('ai-context-coordinate');
     const nodeTarget = document.getElementById('ai-context-target');
@@ -35,6 +45,8 @@ export const createAiPanelController = ({
     const nodeVideoTime = document.getElementById('ai-video-time');
     const nodeAnimationControls = document.getElementById('ai-animation-controls');
     const nodeAnimationList = document.getElementById('ai-animation-list');
+    const nodeMotionControls = document.getElementById('ai-motion-controls');
+    const nodeMotionToggle = document.getElementById('ai-motion-toggle');
     const nodePrompt = document.getElementById('ai-prompt-text');
     const nodeUpload = document.getElementById('ai-upload-input');
     const nodeUploadPreview = document.getElementById('ai-upload-preview');
@@ -223,14 +235,28 @@ export const createAiPanelController = ({
         });
     };
 
+    const renderMotionControls = (state) => {
+        if (!nodeMotionControls || !nodeMotionToggle || !motionPlayer) return;
+        const id = state.selectedObjectId || selectionStore.getState().selectedWorldObjectId;
+        if (!id || !motionPlayer.hasMotion(id)) {
+            nodeMotionControls.style.display = 'none';
+            return;
+        }
+        nodeMotionControls.style.display = 'flex';
+        nodeMotionToggle.textContent = motionPlayer.isPlaying(id) ? '⏸ 暂停' : '▶ 播放';
+    };
+
     const render = () => {
         if (!nodePanel || !nodeTitle || !nodeHint || !nodePrompt || !nodeMode || !nodeCoordinate || !nodeTarget || !nodeUploadPreview) return;
         const state = aiActionContext.getState();
         nodePanel.style.display = 'flex';
         nodeTitle.textContent = 'AI 操作面板';
+        const isEditMode = state.mode === 'replace' && !state.uploadedAssetId;
         nodeHint.textContent = state.mode === 'replace'
-            ? '当前将替换所选对象，允许跨类型替换。'
-            : '点击空白处锁定坐标后，可在该坐标创建一个新对象。';
+            ? (isEditMode
+                ? '输入指令编辑所选对象（如“放大1.2倍/向左移20/绕Y轴转90度/给这张图加个相框”），或上传资产以替换。Ctrl+Z 撤销。'
+                : '已选择新资产，将替换所选对象，允许跨类型替换。')
+            : '已锁定坐标：上传资产可直接创建，或输入指令让 AI 在此生成对象（如“在这里生成一张星空图”）。';
         nodeMode.textContent = `模式：${state.mode === 'replace' ? '替换对象' : state.mode === 'create' ? '创建对象' : '未选择'}`;
         nodeCoordinate.textContent = formatWorldPoint(state.worldPoint);
         const selectedAssetInfo = getSelectedAssetInfo(state);
@@ -242,10 +268,13 @@ export const createAiPanelController = ({
         renderAssetInfo(state);
         videoControlsController.render();
         renderAnimationControls(state);
+        renderMotionControls(state);
         if (nodePrompt.value !== state.prompt) {
             nodePrompt.value = state.prompt || '';
         }
-        nodeSubmit.textContent = state.mode === 'replace' ? '确认替换' : '确认创建';
+        nodeSubmit.textContent = state.mode === 'replace'
+            ? (state.uploadedAssetId ? '确认替换' : '应用编辑')
+            : '确认创建';
         const canDelete = state.mode === 'replace' && state.selectedObjectId && state.selectedObjectType !== 'avatar';
         nodeDelete.disabled = !canDelete;
         const asset = state.uploadedAssetId ? worldState.getAssetById(state.uploadedAssetId) : null;
@@ -259,8 +288,133 @@ export const createAiPanelController = ({
         }
     };
 
+    // —— AI 回复区 / 对话记录 ——
+    const appendAgentLine = (text, kind = 'step') => {
+        if (!nodeAgentReplyBody) return;
+        const line = document.createElement('div');
+        line.className = `ai-agent-line ai-agent-${kind}`;
+        line.textContent = text;
+        nodeAgentReplyBody.appendChild(line);
+        nodeAgentReplyBody.scrollTop = nodeAgentReplyBody.scrollHeight;
+        if (nodePanel) nodePanel.scrollTop = nodePanel.scrollHeight;
+    };
+
+    // 渲染当前会话的完整对话记录（切换/新建/初始化时调用）
+    const renderConversation = () => {
+        if (!nodeAgentReply || !nodeAgentReplyBody || !conversationStore) return;
+        const conv = conversationStore.getCurrent();
+        nodeAgentReplyBody.replaceChildren();
+        const msgs = conv?.messages || [];
+        if (msgs.length === 0) {
+            nodeAgentReply.style.display = 'none';
+            return;
+        }
+        nodeAgentReply.style.display = 'block';
+        msgs.forEach((m) => {
+            appendAgentLine(m.role === 'user' ? `🧑 ${m.content}` : m.content, m.role === 'user' ? 'goal' : 'reply');
+        });
+    };
+
+    // 渲染会话栏（当前标题 + 历史列表）
+    const renderConvBar = (storeState) => {
+        if (!conversationStore) return;
+        if (nodeConvCurrent) {
+            const cur = storeState.conversations.find((c) => c.id === storeState.currentId);
+            nodeConvCurrent.textContent = cur?.title || '新对话';
+        }
+        if (!nodeConvList) return;
+        nodeConvList.replaceChildren(...storeState.conversations.map((c) => {
+            const row = document.createElement('div');
+            row.className = 'ai-conv-item' + (c.id === storeState.currentId ? ' is-active' : '');
+            const label = document.createElement('span');
+            label.className = 'ai-conv-item-title';
+            label.textContent = c.title || '新对话';
+            label.addEventListener('click', (e) => {
+                e.stopPropagation();
+                conversationStore.switchTo(c.id);
+                renderConversation();
+                if (nodeConvList) nodeConvList.style.display = 'none';
+            });
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'ai-conv-item-del';
+            del.textContent = '×';
+            del.title = '删除该对话';
+            del.addEventListener('click', (e) => {
+                e.stopPropagation();
+                conversationStore.deleteConversation(c.id);
+                renderConversation();
+            });
+            row.append(label, del);
+            return row;
+        }));
+    };
+
+    // Agent 路径：未上传新资产 + 有指令 + (选中了对象 或 锁定了坐标) → 交给 agent。
+    // 选中对象 → 编辑该对象；只锁定坐标 → 在该坐标创建/生成对象。
+    const runAgentTask = async () => {
+        const actionContext = aiActionContext.getState();
+        const selectedObjectId = actionContext.selectedObjectId || selectionStore.getState().selectedWorldObjectId;
+        const prompt = (actionContext.prompt || '').trim();
+        if (!prompt) {
+            if (nodeLoading) nodeLoading.textContent = '请输入指令';
+            return;
+        }
+        if (!selectedObjectId && !actionContext.worldPoint) {
+            if (nodeLoading) nodeLoading.textContent = '请先选中一个对象或点击一个坐标';
+            return;
+        }
+        if (selectedObjectId && actionContext.selectedObjectType === 'avatar') {
+            if (nodeLoading) nodeLoading.textContent = '当前版本暂不支持编辑角色模板';
+            return;
+        }
+        window.isAwaitingResponse = true;
+        setBusy(true, 'Agent 思考中...');
+        if (nodeAgentReply) nodeAgentReply.style.display = 'block';
+        appendAgentLine(`🧑 ${prompt}`, 'goal'); // 接在本会话已有记录之后
+        try {
+            const worldContext = {
+                ...aiOrchestrator.getWorldContext(),
+                targetPoint: actionContext.worldPoint || null
+            };
+            const onStep = ({ phase, name, result }) => {
+                if (phase === 'call') {
+                    appendAgentLine(`🔧 ${name} …`, 'step');
+                    if (nodeLoading) nodeLoading.textContent = `🔧 ${name} …`;
+                } else if (phase === 'result' && result?.error) {
+                    appendAgentLine(`⚠️ ${name}: ${result.error}`, 'error');
+                }
+            };
+            // 带上本会话的历史，实现跨轮上下文记忆
+            const history = conversationStore?.getHistory?.() || [];
+            const { reply } = await agentRuntime.run({ goal: prompt, worldContext, history, onStep });
+            aiActionContext.setPrompt('');
+            if (nodePrompt) nodePrompt.value = '';
+            appendAgentLine(reply || '完成', 'reply');
+            appendAgentLine('（Ctrl+Z 撤销）', 'hint');
+            if (nodeLoading) nodeLoading.textContent = '完成';
+            // 记入会话历史（持久化 + 供下轮记忆）
+            conversationStore?.addTurn?.(prompt, reply || '完成');
+        } catch (error) {
+            console.error('Agent run failed:', error);
+            appendAgentLine(`❌ ${error.message || '执行失败'}`, 'error');
+            if (nodeLoading) nodeLoading.textContent = error.message || '执行失败';
+        } finally {
+            setBusy(false);
+            window.isAwaitingResponse = false;
+            render();
+        }
+    };
+
     const executeCurrentAction = async () => {
         const actionContext = aiActionContext.getState();
+        // 未上传新资产、但写了指令，且选中了对象或锁定了坐标 → 走 agent（编辑 或 在坐标处创建）。
+        const selectedObjectId = actionContext.selectedObjectId || selectionStore.getState().selectedWorldObjectId;
+        if (!actionContext.uploadedAssetId
+            && (actionContext.prompt || '').trim()
+            && (selectedObjectId || actionContext.worldPoint)) {
+            return runAgentTask();
+        }
         if (!actionContext.worldPoint) {
             if (nodeLoading) nodeLoading.textContent = '请先点击一个坐标或对象';
             return;
@@ -398,11 +552,43 @@ export const createAiPanelController = ({
         if (nodeUpload) nodeUpload.value = '';
         if (nodeLoading) nodeLoading.textContent = '上下文已清空';
     });
+    addListener(nodeMotionToggle, 'click', (e) => {
+        e.stopPropagation();
+        if (!motionPlayer) return;
+        const id = aiActionContext.getState().selectedObjectId || selectionStore.getState().selectedWorldObjectId;
+        if (!id || !motionPlayer.hasMotion(id)) {
+            if (nodeLoading) nodeLoading.textContent = '该对象还没有运动轨迹（先让 AI 设定）';
+            return;
+        }
+        motionPlayer.toggle(id);
+        renderMotionControls(aiActionContext.getState());
+    });
     // 防止按钮列表的 pointer 事件冒泡到 window 触发场景选中清除或 pointer-lock
     const stopBubble = (e) => { e.stopPropagation(); };
     ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach((type) => {
         addListener(nodeAnimationControls, type, stopBubble);
+        addListener(nodeMotionControls, type, stopBubble);
     });
+    // —— 会话栏：新建 / 历史 ——
+    addListener(nodeConvNew, 'click', (e) => {
+        e.stopPropagation();
+        conversationStore?.newConversation();
+        renderConversation();
+        if (nodeConvList) nodeConvList.style.display = 'none';
+    });
+    addListener(nodeConvHistory, 'click', (e) => {
+        e.stopPropagation();
+        if (!nodeConvList) return;
+        nodeConvList.style.display = nodeConvList.style.display === 'none' ? 'flex' : 'none';
+    });
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click'].forEach((type) => {
+        addListener(nodeConvList, type, (e) => e.stopPropagation());
+    });
+    if (conversationStore) {
+        disposers.push(conversationStore.subscribe(renderConvBar));
+        renderConversation();
+    }
+
     disposers.push(aiActionContext.subscribe(render));
     disposers.push(selectionStore.subscribe(render));
     disposers.push(() => videoControlsController.dispose());

@@ -28,7 +28,10 @@ export const createSceneObjectLifecycle = ({
             // GLB 自带动画能力——用 getter 透传，避免注册时 instance 还在异步加载（clipNames 尚未填充）。
             get mixer() { return instance?.mixer; },
             get clipNames() { return instance?.clipNames; },
-            playClip: (name) => instance?.playClip?.(name),
+            playClip: (name, opts) => instance?.playClip?.(name, opts),
+            stopClip: () => instance?.stopClip?.(),
+            getBones: () => instance?.getBones?.() || [],
+            playClipObject: (clip, opts) => instance?.playClipObject?.(clip, opts),
             destroy: () => {
                 destroy?.();
                 cleanupSceneRoot(root);

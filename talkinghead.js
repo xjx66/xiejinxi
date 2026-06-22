@@ -22,6 +22,17 @@ import { createAssetFromUpload } from "./usecases/create-asset-from-upload.js";
 import { createWorldObjectFromAsset } from "./usecases/create-world-object-from-asset.js";
 import { replaceWorldObjectAsset } from "./usecases/replace-world-object-asset.js";
 import { createAiOrchestrator } from "./ai/ai-orchestrator.js";
+import { createLlmEditPlanner } from "./ai/llm-edit-planner.js";
+import { createActionExecutor } from "./infrastructure/action-executor.js";
+import { createEditHistory } from "./infrastructure/edit-history.js";
+import { createConstructionState } from "./infrastructure/construction-state.js";
+import { createObjectEditPipeline } from "./infrastructure/object-edit-pipeline.js";
+import { createMotionPlayer } from "./infrastructure/motion-player.js";
+import { createConversationStore } from "./infrastructure/conversation-store.js";
+import { createAgentContext } from "./infrastructure/agent/agent-context.js";
+import { createToolRegistry } from "./infrastructure/agent/tool-registry.js";
+import { registerAgentTools } from "./infrastructure/agent/agent-tools.js";
+import { createAgentRuntime } from "./ai/agent-runtime.js";
 import { createCameraController } from "./infrastructure/camera-controller.js";
 import { createFocusPolicy } from "./infrastructure/focus-policy.js";
 import { createSceneObjectLifecycle } from "./infrastructure/scene-object-lifecycle.js";
@@ -56,12 +67,16 @@ const aiRuleEngine = createAiRuleEngine();
 const sceneObjectRegistry = createSceneObjectRegistry();
 const uploadRuntime = createUploadRuntime();
 const selectionStore = createSelectionStore();
+const aiEditPlanner = createLlmEditPlanner();
 const aiOrchestrator = createAiOrchestrator({
     worldState,
     selectionStore,
     sceneObjectRegistry,
-    ruleEngine: aiRuleEngine
+    ruleEngine: aiRuleEngine,
+    editPlanner: aiEditPlanner
 });
+// editHistory / actionExecutor 在 DOMContentLoaded 内构建——它们依赖只在场景初始化后才存在的
+// replaceManagedSceneObject / setActiveBackgroundSelectable / 施工态等。
 const debugLogger = createDebugLogger({
     enabled: () => Boolean(window.__DEBUG_HIT_TEST__ || window.__DEBUG_AVATAR_FOCUS__),
     defaultSessionId: 'architecture-refactor'
@@ -146,10 +161,10 @@ const initGlobalBackground = () => {
     // 确保整个渲染器也使用正确的色彩空间输出
     bgRenderer.outputColorSpace = THREE.SRGBColorSpace;
     const bgScene = new THREE.Scene();
-    bgScene.background = new THREE.Color(0x050505); // 将背景改为深色，配合远处的阴影衰减
+    bgScene.background = new THREE.Color(0xbcd9f2); // 白天天空蓝
     // 远景雾化会在动画循环里按“当前所在列”动态后移：
     // 第一列时压到第二列，推进到第二列后再逐渐退到第三列。
-    const bgFog = new THREE.Fog(0x050505, 80, 1200);
+    const bgFog = new THREE.Fog(0xbcd9f2, 80, 1200);
     bgScene.fog = null;
 
     const bgCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 3000); // 增加相机视野深度
@@ -1597,6 +1612,21 @@ const initGlobalBackground = () => {
         setActiveBackgroundSelectable(object, meta);
         return true;
     };
+    // Shift+点击：把对象加入/移出多选集合；返回该对象点击后是否处于选中状态。
+    const additiveToggleSelectable = (object, meta = {}) => {
+        if (!object || !object.userData || !object.userData.selectableType) return false;
+        const id = object.userData.worldObjectId || sceneObjectRegistry.getWorldObjectIdByRoot(object) || null;
+        const wasSelected = id ? selectionStore.isSelected(id) : false;
+        selectionStore.toggleAdditive({
+            worldObjectId: id,
+            root: object,
+            hitPoint: meta.hitPoint || null,
+            hitResult: meta.hitResult || null,
+            reason: meta.reason || 'shift-select'
+        });
+        return !wasSelected; // 之前没选 → 现在选中
+    };
+    window.additiveToggleSelectable = additiveToggleSelectable;
 
     window.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return; // 只响应左键
@@ -1672,10 +1702,12 @@ const initGlobalBackground = () => {
         } else {
             object.getWorldPosition(bgObjectSelectWorldPos);
         }
-        const isNowSelected = toggleActiveBackgroundSelectable(object, {
+        // Shift+点击 = 多选（加减）；普通点击 = 单选替换。
+        const selectFn = e.shiftKey ? additiveToggleSelectable : toggleActiveBackgroundSelectable;
+        const isNowSelected = selectFn(object, {
             hitPoint: clickedPoint,
             hitResult,
-            reason: 'pointer-select'
+            reason: e.shiftKey ? 'shift-select' : 'pointer-select'
         });
         if (object.userData.selectableType === 'avatar') {
             updateSelectedAvatarEntry(isNowSelected ? getAvatarEntryByMesh(object) : null, { playGreeting: isNowSelected });
@@ -1858,6 +1890,9 @@ const initGlobalBackground = () => {
         sceneObjectRegistry.forEachRecord((record) => {
             record.mixer?.update(deltaSeconds);
         });
+
+        // 推进运动轨迹播放（沿航点移动对象）
+        window.motionPlayer?.update?.(deltaSeconds);
 
         // 大黄和X角色的右键提示图标保持固定显示，不再随着推进淡出
         document.querySelectorAll('.mouse-click-anim').forEach(anim => {
@@ -2299,6 +2334,69 @@ document.addEventListener('DOMContentLoaded', async function() {
         window.bgLookDeltaY = 0;
     });
 
+    // —— AI 编辑：施工态 + 草稿替换管线 + 撤销栈（依赖此处已就绪的场景级函数）——
+    const constructionState = createConstructionState({ THREE });
+    const reselectAfterRebuild = (worldObjectId, root) => {
+        if (root) window.setActiveBackgroundSelectable?.(root, { reason: 'edit-replace' });
+    };
+    const editHistory = createEditHistory({
+        worldState,
+        sceneObjectRegistry,
+        replaceManagedSceneObject,
+        reselect: reselectAfterRebuild,
+        onAfterUndo: () => { window.updateAvatarDialogueUi?.(); }
+    });
+    const objectEditPipeline = createObjectEditPipeline({
+        worldState,
+        sceneObjectRegistry,
+        replaceManagedSceneObject,
+        reselect: reselectAfterRebuild,
+        constructionState,
+        editHistory
+    });
+    const actionExecutor = createActionExecutor({
+        worldState,
+        sceneObjectRegistry,
+        editHistory,
+        objectEditPipeline
+    });
+
+    // —— 运动轨迹播放器 ——
+    const motionPlayer = createMotionPlayer({
+        worldState,
+        sceneObjectRegistry,
+        onChange: () => { window.updateAvatarDialogueUi?.(); }
+    });
+    window.motionPlayer = motionPlayer;
+
+    // —— Agent：工具注册表 + 受控 ctx + 工具调用循环 ——
+    const agentContext = createAgentContext({
+        worldState,
+        sceneObjectRegistry,
+        selectionStore,
+        actionExecutor,
+        objectEditPipeline,
+        createManagedWorldObject,
+        reselect: reselectAfterRebuild,
+        getCameraPlacement: (distance = 60) => {
+            const dir = new THREE.Vector3();
+            bgCamera.getWorldDirection(dir);
+            const p = bgCamera.position.clone().addScaledVector(dir, distance);
+            return { x: p.x, y: p.y, z: p.z };
+        },
+        getTargetPoint: () => aiActionContext.getState().worldPoint || null,
+        motionPlayer
+    });
+    const agentToolRegistry = createToolRegistry();
+    registerAgentTools({ registry: agentToolRegistry, ctx: agentContext });
+    const agentRuntime = createAgentRuntime({ registry: agentToolRegistry });
+    const conversationStore = createConversationStore();
+    // 调试用：暴露 agent 内部，便于直接驱动与解剖生成结果
+    window.agentRuntime = agentRuntime;
+    window.conversationStore = conversationStore;
+    window.agentContext = agentContext;
+    window.agentToolRegistry = agentToolRegistry;
+
     const aiPanelController = createAiPanelController({
         document,
         window,
@@ -2307,6 +2405,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         selectionStore,
         sceneObjectRegistry,
         aiOrchestrator,
+        actionExecutor,
+        agentRuntime,
+        motionPlayer,
+        conversationStore,
         createAssetFromUpload,
         uploadRuntime,
         createWorldObjectFromAsset,
@@ -2333,6 +2435,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         debugLogger
     });
     aiPanelController.render();
+    // Ctrl+Z / Cmd+Z 撤销最近一次 AI 变换编辑
+    editHistory.bindKeyboard(window);
 
     try {
         const AudioContextCtor = window.AudioContext || window['webkitAudioContext'];

@@ -46,9 +46,17 @@ export const createSelectionOverlay = ({
 
     const unsubscribe = selectionStore.subscribe((state) => {
         clearOverlay();
-        if (!state.root) return;
-        overlayRoot = createOverlay(state.root);
-        if (overlayRoot) scene.add(overlayRoot);
+        // 给所有选中对象画框（多选）；兼容旧的单选字段。
+        const roots = (state.roots && state.roots.length) ? state.roots : (state.root ? [state.root] : []);
+        if (roots.length === 0) return;
+        overlayRoot = new THREE.Group();
+        overlayRoot.name = 'selection-overlay-group';
+        overlayRoot.userData.selectionOverlay = true;
+        roots.forEach((root) => {
+            const helper = createOverlay(root);
+            if (helper) overlayRoot.add(helper);
+        });
+        scene.add(overlayRoot);
     });
 
     return {
