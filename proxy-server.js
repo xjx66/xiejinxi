@@ -1,5 +1,5 @@
-// 加载 .env 文件中的环境变量（如果存在）
-try { require('dotenv').config(); } catch (_) { /* dotenv 未安装时静默忽略，避免线上环境报错 */ }
+// 加载 .env 文件中的环境变量（显式指定本文件同目录的 .env，避免从其它工作目录启动时读不到）
+try { require('dotenv').config({ path: require('path').join(__dirname, '.env') }); } catch (_) { /* dotenv 未安装时静默忽略 */ }
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
@@ -13,9 +13,13 @@ const PORT = process.env.PORT || 3000;
 
 // 从环境变量读取密钥（绝不硬编码）
 const VOLCENGINE_API_KEY = process.env.VOLCENGINE_API_KEY;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
 if (!VOLCENGINE_API_KEY) {
     console.warn('⚠️  VOLCENGINE_API_KEY 未设置，/api/proxy 将无法注入 Authorization 头');
+}
+if (!DEEPSEEK_API_KEY) {
+    console.warn('⚠️  DEEPSEEK_API_KEY 未设置，/api/deepseek 将无法注入 Authorization 头');
 }
 
 // Create HTTP server
@@ -48,8 +52,26 @@ const apiProxy = createProxyMiddleware({
     }
 });
 
+// DeepSeek 代理（OpenAI 兼容）：/api/deepseek/<...> -> https://api.deepseek.com/<...>
+const deepseekProxy = createProxyMiddleware({
+    target: 'https://api.deepseek.com',
+    changeOrigin: true,
+    pathRewrite: { '^/api/deepseek': '' },
+    onProxyReq: (proxyReq, req) => {
+        if (DEEPSEEK_API_KEY) {
+            proxyReq.setHeader('Authorization', `Bearer ${DEEPSEEK_API_KEY}`);
+        }
+        console.log(`Proxying ${req.method} request to DeepSeek: ${proxyReq.path}`);
+    },
+    onError: (err, req, res) => {
+        console.error('DeepSeek Proxy Error:', err);
+        res.status(500).json({ error: 'DeepSeek Proxy Error', message: err.message });
+    }
+});
+
 // 注册代理路由 (必须在 express.json() 之前，否则会因为 stream 被消费而卡住)
 app.use('/api/proxy', apiProxy);
+app.use('/api/deepseek', deepseekProxy);
 
 // Body parser for Tencent Cloud API
 app.use(express.json({ limit: '50mb' }));
