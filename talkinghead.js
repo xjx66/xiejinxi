@@ -2135,9 +2135,9 @@ window.robotState = robotState; // Expose for debugging
 // 暴露给 window 以便控制台调试
 window.robotState = robotState;
 
-// 走代理：本地由 proxy-server.js 注入 Authorization；线上 Vercel 由 /api/proxy/[...path].js 注入。
-// 前端不再持有任何 API key。
-const PROXY_API_URL = "/api/proxy/api/coding/v3/chat/completions";
+// 走代理：本地由 proxy-server.js 注入 Authorization；前端不持有任何 API key。
+// 已切换为 DeepSeek（OpenAI 兼容）。
+const PROXY_API_URL = "/api/deepseek/chat/completions";
 
 // -----------------------------------------------------------------------
 // 动作解析与执行逻辑 (Global Scope)
@@ -2319,7 +2319,7 @@ Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Ple
                 // Authorization 由代理服务端注入，前端不携带 key
             },
             body: JSON.stringify({
-                model: "ark-code-latest",
+                model: "deepseek-chat",
                 messages: [
                     {
                         role: "system",
@@ -2341,7 +2341,12 @@ Example: "[happy] Hello! [handup] Yay! [kiss] It's nice to meet you! [kneel] Ple
         }
 
         const data = await response.json();
-        const aiResponse = data.choices[0].message.content;
+        // 关闭思考模式：deepseek-chat 本身为非思考模型；这里再剥掉任何可能的 <think>…</think> 推理内容，
+        // 只保留最终回答，确保数字人不会念出思考过程（reasoning_content 也不使用）。
+        const aiResponse = (data.choices[0].message.content || "")
+            .replace(/<think>[\s\S]*?<\/think>/gi, "")
+            .replace(/<\/?think>/gi, "")
+            .trim();
         console.log("🤖 AI Original Response:", aiResponse); // 调试日志
 
         conversationHistory.push({
