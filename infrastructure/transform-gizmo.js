@@ -36,7 +36,8 @@ export const createTransformGizmo = ({
     sceneObjectRegistry,
     worldState,
     getInteractionBox,
-    isPointerLocked
+    isPointerLocked,
+    onBeforeTransform // (worldObjectId) => void：拖拽开始前回调，用于压入撤销快照
 }) => {
     const gizmoRoot = new THREE.Group();
     gizmoRoot.name = 'transform-gizmo-root';
@@ -420,6 +421,10 @@ export const createTransformGizmo = ({
             if (theta0 == null) return;
             dragInit.theta0 = theta0;
         }
+
+        // 拖拽开始前压入撤销快照（当前位姿），以便 Cmd+Z 撤销本次手动移动/旋转。
+        const dragId = sceneObjectRegistry.getWorldObjectIdByRoot(currentTarget);
+        if (dragId) onBeforeTransform?.(dragId);
 
         drag = dragInit;
         window.__gizmoDragging__ = true;

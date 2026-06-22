@@ -18,7 +18,8 @@ export const createAgentContext = ({
     reselect,
     getCameraPlacement, // () => {x,y,z}：当前相机前方的世界坐标快照（静止放置用）
     getTargetPoint, // () => {x,y,z}|null：用户当前锁定的坐标（点空白处得到）
-    motionPlayer
+    motionPlayer,
+    editHistory
 }) => {
     const logs = [];
 
@@ -249,6 +250,8 @@ export const createAgentContext = ({
 
         deleteObject: (objectId) => {
             const id = objectId || requireSelected();
+            const wo = worldState.getWorldObjectById?.(id);
+            if (wo) editHistory?.pushRecord?.(wo); // 删除可撤销
             sceneObjectRegistry.destroyWorldObject(id);
             worldState.removeWorldObject(id);
             return { deleted: id };

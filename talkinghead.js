@@ -1556,7 +1556,8 @@ const initGlobalBackground = () => {
         sceneObjectRegistry,
         worldState,
         getInteractionBox: (object) => pickingSystem.getInteractionBox(object),
-        isPointerLocked: () => Boolean(window.bgPointerLocked)
+        isPointerLocked: () => Boolean(window.bgPointerLocked),
+        onBeforeTransform: (worldObjectId) => window.editHistory?.push(worldObjectId)
     });
     selectionStore.subscribe((state) => {
         activeBackgroundSelectable = state.root || null;
@@ -2346,6 +2347,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         reselect: reselectAfterRebuild,
         onAfterUndo: () => { window.updateAvatarDialogueUi?.(); }
     });
+    window.editHistory = editHistory; // gizmo 拖拽前回调按需读取
     const objectEditPipeline = createObjectEditPipeline({
         worldState,
         sceneObjectRegistry,
@@ -2385,7 +2387,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             return { x: p.x, y: p.y, z: p.z };
         },
         getTargetPoint: () => aiActionContext.getState().worldPoint || null,
-        motionPlayer
+        motionPlayer,
+        editHistory
     });
     const agentToolRegistry = createToolRegistry();
     registerAgentTools({ registry: agentToolRegistry, ctx: agentContext });
@@ -2416,6 +2419,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         createManagedWorldObject,
         replaceManagedSceneObject,
         deleteWorldObject: (worldObjectId) => {
+            // 删除前压入整对象快照，Cmd+Z 可撤销删除（重建对象）。
+            const wo = worldState.getWorldObjectById?.(worldObjectId);
+            if (wo) editHistory.pushRecord(wo);
             sceneObjectRegistry.destroyWorldObject(worldObjectId);
             worldState.removeWorldObject(worldObjectId);
         },
