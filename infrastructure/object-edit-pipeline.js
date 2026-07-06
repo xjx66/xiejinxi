@@ -6,6 +6,9 @@ import { applyTransformAction } from './transform-ops.js';
 
 const deepCloneRecord = (record) => JSON.parse(JSON.stringify(record));
 
+// 施工态最短可见时长（毫秒）：同步/极快的编辑也让用户看到“建造中”遮罩。
+const MIN_VISIBLE_MS = 650;
+
 // 相框开关对应的形态字段（镜像规则引擎在创建时的取值，保持数据一致）。
 const FRAME_PRESETS = {
     frame: { collection: 'painting', templateId: 'template-painting-image' },
@@ -74,11 +77,19 @@ export const createObjectEditPipeline = ({
         };
 
         try {
+            const buildStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
             setState(originalRoot, 'planning');
             setState(originalRoot, 'building');
             const draft = await produceDraft(deepCloneRecord(original));
             if (!draft) throw new Error('草稿生成失败');
             setState(originalRoot, 'refining');
+
+            // 施工态至少可见 MIN_VISIBLE_MS：同步/极快的编辑也让用户看到“加载/建造”过程。
+            // setTimeout 让出宏任务，动画循环得以渲染施工态遮罩。
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - buildStart;
+            if (elapsed < MIN_VISIBLE_MS) {
+                await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
+            }
 
             worldState.upsertWorldObject(draft);
             const newRoot = replaceManagedSceneObject(worldObjectId, draft);

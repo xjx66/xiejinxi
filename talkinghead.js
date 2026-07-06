@@ -168,10 +168,10 @@ const initGlobalBackground = () => {
     bgScene.fog = null;
 
     const bgCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 3000); // 增加相机视野深度
-    bgCamera.position.set(0, 8, 40); 
+    bgCamera.position.set(0, 13, 40); // 地面抬到 y=0 后，相机同步上移 5，保持离地 13 视角不变
     bgCamera.lookAt(0, 8, -900); // 调整相机朝向，使其看向深度900的墙面
 
-    const WORLD_FLOOR_Y = -5;
+    const WORLD_FLOOR_Y = 0; // 地面在世界 y=0；点击/放置的地面平面即 y=0
     const WORLD_ORIGIN = new THREE.Vector3(0, WORLD_FLOOR_Y, 0);
     const WORLD_CLICK_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -WORLD_FLOOR_Y);
     const lastClickedWorldPoint = new THREE.Vector3(0, 0, 0);
@@ -480,7 +480,7 @@ const initGlobalBackground = () => {
     ceilMat.onBeforeCompile = skylightShaderPlugin;
     const ceil = new THREE.Mesh(ceilGeo, ceilMat);
     ceil.rotation.x = Math.PI / 2;
-    ceil.position.y = 40; 
+    ceil.position.y = 45;
     if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(ceil);
 
     // 方形吸顶灯阵列（代替原来的网格线）
@@ -583,11 +583,11 @@ const initGlobalBackground = () => {
 
     const skylightRoof = new THREE.Mesh(ceilGeo, skylightRoofMat);
     skylightRoof.rotation.x = Math.PI / 2;
-    skylightRoof.position.y = 40 + shaftHeight;
+    skylightRoof.position.y = 45 + shaftHeight;
     if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightRoof);
 
     const skylightSkyRadius = 2200;
-    const skylightSkyCenterY = 40 + shaftHeight + 1400;
+    const skylightSkyCenterY = 45 + shaftHeight + 1400;
     const skylightSkyGeo = new THREE.SphereGeometry(skylightSkyRadius, 48, 24);
     const skylightSkyMat = new THREE.MeshBasicMaterial({
         color: 0x9fd4ff,
@@ -620,7 +620,7 @@ const initGlobalBackground = () => {
     for (let i = 0; i < treeCols; i++) {
         const shaftMesh = new THREE.Mesh(shaftGeo, shaftMats);
         const x = (i - Math.floor(treeCols / 2)) * treeSpacing + SKYLIGHT_GRID_PHASE;
-        shaftMesh.position.set(x, 40 + shaftHeight / 2, SKYLIGHT_CENTER_Z);
+        shaftMesh.position.set(x, 45 + shaftHeight / 2, SKYLIGHT_CENTER_Z);
         skylightShaftsGroup.add(shaftMesh);
     }
     if (!START_WITH_EMPTY_SYSTEM_SCENE) bgScene.add(skylightShaftsGroup);
@@ -780,7 +780,7 @@ const initGlobalBackground = () => {
             const x = (i - Math.floor(treeCols / 2)) * treeSpacing + SKYLIGHT_GRID_PHASE;
             const treeWorldObjectId = `world-tree-${i}`;
             treeClone.name = treeWorldObjectId;
-            treeClone.position.set(x, -5, SKYLIGHT_CENTER_Z);
+            treeClone.position.set(x, 0, SKYLIGHT_CENTER_Z);
             treeClone.userData.worldObjectId = treeWorldObjectId;
             treeClone.userData.selectableType = 'tree';
             treeClone.userData.selectableFocusZ = SKYLIGHT_CENTER_Z + BG_FOCUS_CAMERA_OFFSET_Z;
@@ -826,7 +826,7 @@ const initGlobalBackground = () => {
     // 减小墙的高度，避免插入地板和天花板。高度 = 原高度(45) - 地板厚度 - 天花板灯厚度
     const wallHeight = 45 - floorTileThickness - lightThickness;
     // 墙的 Y 中心点也要相应偏移，正好夹在地板顶部和灯底部之间
-    const wallCenterY = 17.5 + (floorTileThickness - lightThickness) / 2;
+    const wallCenterY = 22.5 + (floorTileThickness - lightThickness) / 2;
     const wallGeo = new THREE.PlaneGeometry(4000, wallHeight); 
     
     // 加载材质贴图 (复用上面定义的 textureLoader)
@@ -1871,7 +1871,7 @@ const initGlobalBackground = () => {
         const fadeProgress = 1;
 
         // 保持相机高度稳定，避免推进到第二三列时角色投影被额外压缩或上抬。
-        const BG_Y_BASE = 8;
+        const BG_Y_BASE = 13; // 地面抬到 0 后相机基准高度同步 +5，保持视角不变
         const currentY = BG_Y_BASE;
         bgCamera.position.y = currentY;
         // 鼠标边缘感应控制主视角，形成接近第一人称的自由观察。
@@ -2172,6 +2172,8 @@ const initGlobalBackground = () => {
     const BG_WHEEL_MOVE_STEP = 24;    
     
     window.addEventListener('wheel', (e) => {
+        // 滚轮落在 AI 操作面板内时，放行让面板自身滚动，不做相机推进。
+        if (e.target?.closest?.('#avatar-dialogue-panel')) return;
         // 阻止页面默认滚动行为，让滚轮专用于场景聚焦
         e.preventDefault();
         const moveSign = Math.sign(e.deltaY);

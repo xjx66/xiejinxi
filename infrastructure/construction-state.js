@@ -3,10 +3,10 @@
 // 外壳是 root 的子节点，跟随对象位姿，无需引用 scene。文本状态由 AI 面板的 loading 文案承担。
 
 const STATE_STYLE = {
-    planning: { color: 0x3b8bff, opacity: 0.25 }, // 蓝：规划
-    building: { color: 0xffb020, opacity: 0.30 }, // 琥珀：建造
-    refining: { color: 0x3bd166, opacity: 0.25 }, // 绿：细化
-    failed: { color: 0xff3b3b, opacity: 0.35 }  // 红：失败
+    planning: { color: 0x3b8bff, opacity: 0.55 }, // 蓝：规划
+    building: { color: 0xffb020, opacity: 0.75 }, // 琥珀：建造
+    refining: { color: 0x3bd166, opacity: 0.6 },  // 绿：细化
+    failed: { color: 0xff3b3b, opacity: 0.8 }    // 红：失败
 };
 
 const SHELL_KEY = '__constructionShell__';

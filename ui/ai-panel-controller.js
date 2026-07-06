@@ -326,22 +326,23 @@ export const createAiPanelController = ({
         nodeConvList.replaceChildren(...storeState.conversations.map((c) => {
             const row = document.createElement('div');
             row.className = 'ai-conv-item' + (c.id === storeState.currentId ? ' is-active' : '');
-            const label = document.createElement('span');
-            label.className = 'ai-conv-item-title';
-            label.textContent = c.title || '新对话';
-            label.addEventListener('click', (e) => {
+            // 整行可点击切换会话（不止标题文字），命中区域更大。
+            row.addEventListener('click', (e) => {
                 e.stopPropagation();
                 conversationStore.switchTo(c.id);
                 renderConversation();
                 if (nodeConvList) nodeConvList.style.display = 'none';
             });
+            const label = document.createElement('span');
+            label.className = 'ai-conv-item-title';
+            label.textContent = c.title || '新对话';
             const del = document.createElement('button');
             del.type = 'button';
             del.className = 'ai-conv-item-del';
             del.textContent = '×';
             del.title = '删除该对话';
             del.addEventListener('click', (e) => {
-                e.stopPropagation();
+                e.stopPropagation(); // 删除不触发行的切换
                 conversationStore.deleteConversation(c.id);
                 renderConversation();
             });
